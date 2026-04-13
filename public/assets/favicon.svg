@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <!-- Link Livre Favicon -->
+  <!-- Background -->
+  <rect width="192" height="192" fill="#4F46E5" rx="32"/>
+  
+  <!-- Chain link icon -->
+  <g transform="translate(96, 96)">
+    <!-- Left link -->
+    <circle cx="-24" cy="0" r="18" fill="none" stroke="white" stroke-width="5"/>
+    <circle cx="-24" cy="0" r="12" fill="none" stroke="white" stroke-width="2"/>
+    
+    <!-- Right link -->
+    <circle cx="24" cy="0" r="18" fill="none" stroke="white" stroke-width="5"/>
+    <circle cx="24" cy="0" r="12" fill="none" stroke="white" stroke-width="2"/>
+    
+    <!-- Chain connection -->
+    <line x1="-6" y1="0" x2="6" y2="0" stroke="white" stroke-width="5" stroke-linecap="round"/>
+    
+    <!-- Liberation arrow -->
+    <path d="M -42 32 L -32 48 L -22 32" fill="none" stroke="#10B981" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

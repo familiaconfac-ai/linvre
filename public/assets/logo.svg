@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120">
+  <!-- Link Livre Logo Placeholder -->
+  <rect width="400" height="120" fill="none"/>
+  
+  <!-- Circle with chain link design -->
+  <g transform="translate(60, 60)">
+    <!-- Left link -->
+    <circle cx="-15" cy="0" r="12" fill="none" stroke="#4F46E5" stroke-width="3"/>
+    <circle cx="-15" cy="0" r="8" fill="none" stroke="#4F46E5" stroke-width="1.5"/>
+    
+    <!-- Right link -->
+    <circle cx="15" cy="0" r="12" fill="none" stroke="#4F46E5" stroke-width="3"/>
+    <circle cx="15" cy="0" r="8" fill="none" stroke="#4F46E5" stroke-width="1.5"/>
+    
+    <!-- Chain connection -->
+    <line x1="-3" y1="0" x2="3" y2="0" stroke="#4F46E5" stroke-width="3"/>
+    
+    <!-- Liberation indicator (arrow) -->
+    <path d="M -25 18 L -20 23 L -15 18" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- Text -->
+  <text x="140" y="75" font-family="system-ui, sans-serif" font-size="48" font-weight="bold" fill="#4F46E5">
+    Link
+  </text>
+  <text x="140" y="105" font-family="system-ui, sans-serif" font-size="32" font-weight="600" fill="#10B981">
+    Livre
+  </text>
+</svg>
