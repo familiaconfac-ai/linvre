@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Layout from '../../components/Layout'
 import StatusBadge from '../../components/StatusBadge'
 import LoadingSpinner from '../../components/LoadingSpinner'
@@ -14,6 +14,7 @@ import {
 } from '../../services/dataProvider'
 import { computeAccessStatus } from '../../services/accessEngine'
 import type { Task, TaskInstance, AccessSummary } from '../../types'
+import { uploadImage } from '../../utils/imageUpload'
 
 export default function ChildDashboard() {
   const { appUser } = useAuth()
@@ -23,8 +24,9 @@ export default function ChildDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [completingId, setCompletingId] = useState<string | null>(null)
-  // Holds temporary photo URL input per instance
-  const [photoInput, setPhotoInput] = useState<Record<string, string>>({})
+  const [photoFiles, setPhotoFiles] = useState<Record<string, File>>({})
+  const [photoPreviewUrls, setPhotoPreviewUrls] = useState<Record<string, string>>({})
+  const previewUrlsRef = useRef<Record<string, string>>({})
 
   useEffect(() => {
     if (!appUser) return
@@ -54,8 +56,20 @@ export default function ChildDashboard() {
     setCompletingId(inst.id)
     try {
       if (task.requiresApproval) {
-        const proof = task.type === 'photo' ? photoInput[inst.id] : undefined
+        let proof: string | undefined
+        const requiresCorrectionPhoto = task.type === 'photo' || Boolean(inst.issuePhotoUrl)
+        if (requiresCorrectionPhoto) {
+          const selectedFile = photoFiles[inst.id]
+          if (!selectedFile) {
+            setError('Selecione uma foto antes de enviar a prova.')
+            return
+          }
+          proof = await uploadImage(selectedFile)
+        }
         await providerMarkTaskInstanceWaitingApproval(inst.id, proof)
+        if (requiresCorrectionPhoto) {
+          clearPhotoState(inst.id)
+        }
       } else {
         await providerMarkTaskInstanceCompleted(inst.id, appUser.id, task.points)
       }
@@ -66,6 +80,59 @@ export default function ChildDashboard() {
       setCompletingId(null)
     }
   }
+
+  function handlePhotoSelected(instanceId: string, file: File | null) {
+    setError('')
+    const currentPreview = photoPreviewUrls[instanceId]
+    if (currentPreview) {
+      URL.revokeObjectURL(currentPreview)
+    }
+
+    if (!file) {
+      setPhotoFiles((prev) => {
+        const next = { ...prev }
+        delete next[instanceId]
+        return next
+      })
+      setPhotoPreviewUrls((prev) => {
+        const next = { ...prev }
+        delete next[instanceId]
+        return next
+      })
+      return
+    }
+
+    const previewUrl = URL.createObjectURL(file)
+    setPhotoFiles((prev) => ({ ...prev, [instanceId]: file }))
+    setPhotoPreviewUrls((prev) => ({ ...prev, [instanceId]: previewUrl }))
+  }
+
+  function clearPhotoState(instanceId: string) {
+    const currentPreview = photoPreviewUrls[instanceId]
+    if (currentPreview) {
+      URL.revokeObjectURL(currentPreview)
+    }
+    setPhotoFiles((prev) => {
+      const next = { ...prev }
+      delete next[instanceId]
+      return next
+    })
+    setPhotoPreviewUrls((prev) => {
+      const next = { ...prev }
+      delete next[instanceId]
+      return next
+    })
+  }
+
+  useEffect(() => {
+    previewUrlsRef.current = photoPreviewUrls
+  }, [photoPreviewUrls])
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [])
 
   const taskMap = new Map(tasks.map((t) => [t.id, t]))
 
@@ -161,6 +228,8 @@ export default function ChildDashboard() {
               const isDone = inst.status === 'completed'
               const isWaiting = inst.status === 'waiting_approval'
               const isCompleting = completingId === inst.id
+              const proofPhotoUrl = inst.proofPhotoUrl ?? inst.proofUrl
+              const requiresCorrectionPhoto = task.type === 'photo' || Boolean(inst.issuePhotoUrl)
 
               return (
                 <div
@@ -168,6 +237,8 @@ export default function ChildDashboard() {
                   className={`bg-white rounded-xl border shadow-sm p-4 ${
                     isWaiting
                       ? 'border-yellow-300 bg-yellow-50'
+                      : inst.status === 'issue_reported'
+                      ? 'border-amber-300 bg-amber-50'
                       : isDone
                       ? 'border-green-100 bg-green-50'
                       : 'border-gray-200'
@@ -196,17 +267,61 @@ export default function ChildDashboard() {
 
                       <p className="text-xs text-indigo-500 mt-1">+{task.points} pts</p>
 
-                      {/* Photo type: URL input */}
-                      {task.type === 'photo' && !isDone && !isWaiting && (
-                        <input
-                          type="text"
-                          placeholder="Cole o link da foto aqui"
-                          value={photoInput[inst.id] ?? ''}
-                          onChange={(e) =>
-                            setPhotoInput((p) => ({ ...p, [inst.id]: e.target.value }))
-                          }
-                          className="mt-2 w-full border border-gray-200 rounded-lg px-2 py-1 text-xs"
-                        />
+                      {inst.issuePhotoUrl && (
+                        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                          <p className="text-xs font-semibold text-amber-800">Foto da pendência</p>
+                          <img
+                            src={inst.issuePhotoUrl}
+                            alt="Foto da pendência registrada pelos responsáveis"
+                            className="mt-1 h-20 w-20 rounded-lg object-cover border border-amber-200"
+                          />
+                          {inst.issueDescription && (
+                            <p className="text-xs text-amber-700 mt-1">{inst.issueDescription}</p>
+                          )}
+                          <p className="text-xs text-amber-700 mt-1">
+                            Corrija este ponto e envie uma nova foto para aprovação.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Photo type: file input + preview */}
+                      {requiresCorrectionPhoto && !isDone && !isWaiting && (
+                        <div className="mt-2">
+                          <label
+                            htmlFor={`photo-${inst.id}`}
+                            className="inline-flex items-center text-xs bg-gray-100 border border-gray-200 text-gray-700 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors"
+                          >
+                            Selecionar foto
+                          </label>
+                          <input
+                            id={`photo-${inst.id}`}
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handlePhotoSelected(inst.id, e.target.files?.[0] ?? null)}
+                            className="hidden"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {photoFiles[inst.id]?.name ?? 'Nenhuma foto selecionada'}
+                          </p>
+                          {photoPreviewUrls[inst.id] && (
+                            <img
+                              src={photoPreviewUrls[inst.id]}
+                              alt="Pré-visualização da prova"
+                              className="mt-2 h-20 w-20 rounded-lg object-cover border border-gray-200"
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {proofPhotoUrl && (
+                        <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2">
+                          <p className="text-xs font-semibold text-indigo-700">Foto enviada para correção</p>
+                          <img
+                            src={proofPhotoUrl}
+                            alt="Foto enviada como prova da correção"
+                            className="mt-1 h-20 w-20 rounded-lg object-cover border border-indigo-200"
+                          />
+                        </div>
                       )}
 
                       {isWaiting && (
@@ -219,7 +334,10 @@ export default function ChildDashboard() {
                     {!isDone && !isWaiting && (
                       <button
                         onClick={() => handleComplete(inst, task)}
-                        disabled={isCompleting}
+                        disabled={
+                          isCompleting ||
+                          (requiresCorrectionPhoto && task.requiresApproval && !photoFiles[inst.id])
+                        }
                         className="shrink-0 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium"
                       >
                         {isCompleting

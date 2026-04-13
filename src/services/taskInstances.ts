@@ -46,7 +46,10 @@ export async function markTaskInstanceCompleted(
     completedAt: serverTimestamp(),
     pointsAwarded: pointsToAward,
   }
-  if (proofUrl) updates.proofUrl = proofUrl
+  if (proofUrl) {
+    updates.proofUrl = proofUrl
+    updates.proofPhotoUrl = proofUrl
+  }
   await updateDoc(doc(db, 'taskInstances', instanceId), updates)
   if (pointsToAward > 0) {
     await updateDoc(doc(db, 'users', childId), { points: increment(pointsToAward) })
@@ -64,7 +67,30 @@ export async function markTaskInstanceWaitingApproval(
     status: 'waiting_approval',
     completedAt: serverTimestamp(),
   }
-  if (proofUrl) updates.proofUrl = proofUrl
+  if (proofUrl) {
+    updates.proofUrl = proofUrl
+    updates.proofPhotoUrl = proofUrl
+  }
+  await updateDoc(doc(db, 'taskInstances', instanceId), updates)
+}
+
+export async function markTaskInstanceIssueReported(
+  instanceId: string,
+  issuePhotoUrl: string,
+  issueDescription?: string,
+): Promise<void> {
+  if (!db || !isFirebaseConfigured()) {
+    throw new Error('Firebase não configurado.')
+  }
+  const updates: Record<string, unknown> = {
+    status: 'issue_reported',
+    issuePhotoUrl,
+    createdByParent: true,
+    isManualIssue: true,
+  }
+  if (issueDescription?.trim()) {
+    updates.issueDescription = issueDescription.trim()
+  }
   await updateDoc(doc(db, 'taskInstances', instanceId), updates)
 }
 

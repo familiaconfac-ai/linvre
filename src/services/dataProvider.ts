@@ -7,6 +7,7 @@ import {
   ensureDailyInstances,
   getTodayTaskInstancesByChild,
   markTaskInstanceCompleted,
+  markTaskInstanceIssueReported,
   markTaskInstanceWaitingApproval,
 } from './taskInstances'
 import { recalculateChildAccessStatus } from './accessEngine'
@@ -24,6 +25,7 @@ import {
   getTasksByChildDemo,
   getTodayTaskInstancesByChildDemo,
   markTaskInstanceCompletedDemo,
+  markTaskInstanceIssueReportedDemo,
   markTaskInstanceWaitingApprovalDemo,
   recalculateChildAccessStatusDemo,
   resetDemoData,
@@ -115,6 +117,18 @@ export async function providerMarkTaskInstanceWaitingApproval(
     return
   }
   await markTaskInstanceWaitingApproval(instanceId, proofUrl)
+}
+
+export async function providerMarkTaskInstanceIssueReported(
+  instanceId: string,
+  issuePhotoUrl: string,
+  issueDescription?: string,
+): Promise<void> {
+  if (isDemoMode()) {
+    markTaskInstanceIssueReportedDemo(instanceId, issuePhotoUrl, issueDescription)
+    return
+  }
+  await markTaskInstanceIssueReported(instanceId, issuePhotoUrl, issueDescription)
 }
 
 export async function providerApproveTaskInstance(

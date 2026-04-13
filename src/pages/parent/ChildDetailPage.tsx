@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import Layout from '../../components/Layout'
 import StatusBadge from '../../components/StatusBadge'
@@ -8,18 +8,20 @@ import EmptyState from '../../components/EmptyState'
 import { useAuth } from '../../hooks/useAuth'
 import {
   providerApproveTaskInstance,
-  providerCreateTask,
   providerEnsureDailyInstances,
   providerGetCurrentUserProfile,
   providerGetTasksByChild,
   providerGetTodayTaskInstancesByChild,
+  providerMarkTaskInstanceIssueReported,
   providerRecalculateChildAccessStatus,
 } from '../../services/dataProvider'
 import { computeAccessStatus } from '../../services/accessEngine'
 import type { AppUser, Task, TaskInstance, AccessSummary } from '../../types'
+import { uploadImage } from '../../utils/imageUpload'
 
 const statusLabel: Record<TaskInstance['status'], string> = {
   pending: 'Pendente',
+  issue_reported: 'Pendência registrada',
   waiting_approval: 'Aguardando aprovação',
   completed: 'Concluída',
   skipped: 'Pulada',
@@ -27,6 +29,7 @@ const statusLabel: Record<TaskInstance['status'], string> = {
 
 const statusColor: Record<TaskInstance['status'], string> = {
   pending: 'text-gray-400',
+  issue_reported: 'text-amber-700 font-medium',
   waiting_approval: 'text-yellow-600 font-medium',
   completed: 'text-green-600 font-medium',
   skipped: 'text-gray-400',
@@ -34,7 +37,7 @@ const statusColor: Record<TaskInstance['status'], string> = {
 
 export default function ChildDetailPage() {
   const { id: childId } = useParams<{ id: string }>()
-  const { appUser, localMode } = useAuth()
+  const { appUser } = useAuth()
   const [child, setChild] = useState<AppUser | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [instances, setInstances] = useState<TaskInstance[]>([])
@@ -43,13 +46,12 @@ export default function ChildDetailPage() {
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [approveSuccess, setApproveSuccess] = useState('')
   const [error, setError] = useState('')
-  const [showIssueForm, setShowIssueForm] = useState(false)
+  const [issueTargetId, setIssueTargetId] = useState<string | null>(null)
+  const [issueDescription, setIssueDescription] = useState('')
+  const [issueFile, setIssueFile] = useState<File | null>(null)
+  const [issuePreviewUrl, setIssuePreviewUrl] = useState('')
   const [issueSubmitting, setIssueSubmitting] = useState(false)
-  const [issueForm, setIssueForm] = useState({
-    title: 'Você deixou itens no quarto',
-    description: '',
-    imageUrl: '',
-  })
+  const issuePreviewRef = useRef('')
 
   useEffect(() => {
     if (!appUser || !childId) return
@@ -100,50 +102,69 @@ export default function ChildDetailPage() {
     }
   }
 
-  async function handleAddManualIssue() {
-    if (!appUser || !childId || !child) return
-    if (!issueForm.title.trim()) return
+  function handleOpenIssueForm(instanceId: string) {
+    setIssueTargetId(instanceId)
+    setIssueDescription('')
+    if (issuePreviewUrl) {
+      URL.revokeObjectURL(issuePreviewUrl)
+    }
+    setIssuePreviewUrl('')
+    setIssueFile(null)
+  }
 
+  function handleIssueFileSelected(file: File | null) {
+    if (issuePreviewUrl) {
+      URL.revokeObjectURL(issuePreviewUrl)
+    }
+    if (!file) {
+      setIssuePreviewUrl('')
+      setIssueFile(null)
+      return
+    }
+    setIssueFile(file)
+    setIssuePreviewUrl(URL.createObjectURL(file))
+  }
+
+  async function handleSaveIssue() {
+    if (!appUser || !childId || !child || !issueTargetId || !issueFile) return
     setIssueSubmitting(true)
     setError('')
     try {
-      const description = issueForm.imageUrl.trim()
-        ? `${issueForm.description.trim()}\nFoto de referência: ${issueForm.imageUrl.trim()}`.trim()
-        : issueForm.description.trim()
-
-      await providerCreateTask({
-        familyId: child.familyId,
-        childId,
-        appliesToAllChildren: false,
-        appliesToUserIds: [childId],
-        createdByParent: true,
-        isManualIssue: true,
-        title: issueForm.title.trim(),
-        description,
-        points: 10,
-        category: 'mandatory',
-        type: 'photo',
-        frequency: 'daily',
-        requiresApproval: true,
-        active: true,
-        sortOrder: (tasks[tasks.length - 1]?.sortOrder ?? 0) + 1,
-        createdBy: appUser.id,
-      })
-
-      const updatedTasks = await providerGetTasksByChild(childId, child.familyId)
-      await providerEnsureDailyInstances(childId, child.familyId, updatedTasks)
+      const issuePhotoUrl = await uploadImage(issueFile)
+      await providerMarkTaskInstanceIssueReported(
+        issueTargetId,
+        issuePhotoUrl,
+        issueDescription,
+      )
       await providerRecalculateChildAccessStatus(childId, child.familyId)
 
-      setIssueForm({ title: 'Você deixou itens no quarto', description: '', imageUrl: '' })
-      setShowIssueForm(false)
-      setApproveSuccess('Pendência com foto adicionada com sucesso.')
+      setIssueTargetId(null)
+      setIssueDescription('')
+      setIssueFile(null)
+      if (issuePreviewUrl) {
+        URL.revokeObjectURL(issuePreviewUrl)
+      }
+      setIssuePreviewUrl('')
+      setApproveSuccess('Pendência registrada com foto do problema.')
       await load()
     } catch {
-      setError('Erro ao adicionar pendência com foto.')
+      setError('Erro ao registrar pendência com foto.')
     } finally {
       setIssueSubmitting(false)
     }
   }
+
+  useEffect(() => {
+    issuePreviewRef.current = issuePreviewUrl
+  }, [issuePreviewUrl])
+
+  useEffect(() => {
+    return () => {
+      if (issuePreviewRef.current) {
+        URL.revokeObjectURL(issuePreviewRef.current)
+      }
+    }
+  }, [])
 
   const taskMap = new Map(tasks.map((t) => [t.id, t]))
 
@@ -177,50 +198,6 @@ export default function ChildDetailPage() {
               </div>
               <StatusBadge status={summary.accessStatus} />
             </div>
-
-            {localMode && (
-              <div className="mt-3">
-                <button
-                  onClick={() => setShowIssueForm((s) => !s)}
-                  className="text-xs bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition-colors"
-                >
-                  {showIssueForm ? 'Cancelar pendência' : 'Adicionar pendência com foto'}
-                </button>
-
-                {showIssueForm && (
-                  <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-amber-50 space-y-2">
-                    <input
-                      type="text"
-                      value={issueForm.title}
-                      onChange={(e) => setIssueForm((f) => ({ ...f, title: e.target.value }))}
-                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm"
-                      placeholder="Título da pendência"
-                    />
-                    <input
-                      type="text"
-                      value={issueForm.description}
-                      onChange={(e) => setIssueForm((f) => ({ ...f, description: e.target.value }))}
-                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm"
-                      placeholder="Descrição (ex.: cama desarrumada)"
-                    />
-                    <input
-                      type="text"
-                      value={issueForm.imageUrl}
-                      onChange={(e) => setIssueForm((f) => ({ ...f, imageUrl: e.target.value }))}
-                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm"
-                      placeholder="URL da foto (opcional)"
-                    />
-                    <button
-                      onClick={handleAddManualIssue}
-                      disabled={issueSubmitting}
-                      className="bg-amber-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                    >
-                      {issueSubmitting ? 'Adicionando...' : 'Salvar pendência'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Progress bar */}
             <div>
@@ -256,12 +233,19 @@ export default function ChildDetailPage() {
             {instances.map((inst) => {
               const task = taskMap.get(inst.taskId)
               const isWaiting = inst.status === 'waiting_approval'
+              const canRegisterIssue =
+                inst.status !== 'completed' && (Boolean(task?.requiresApproval) || task?.type === 'photo')
               const isApproving = approvingId === inst.id
+              const proofPhotoUrl = inst.proofPhotoUrl ?? inst.proofUrl
               return (
                 <div
                   key={inst.id}
                   className={`bg-white rounded-xl border shadow-sm p-4 flex items-center justify-between gap-3 ${
-                    isWaiting ? 'border-yellow-300 bg-yellow-50' : 'border-gray-100'
+                    isWaiting
+                      ? 'border-yellow-300 bg-yellow-50'
+                      : inst.status === 'issue_reported'
+                      ? 'border-amber-300 bg-amber-50'
+                      : 'border-gray-100'
                   }`}
                 >
                   <div className="flex-1 min-w-0">
@@ -275,15 +259,90 @@ export default function ChildDetailPage() {
                     <p className={`text-xs mt-1 ${statusColor[inst.status]}`}>
                       {statusLabel[inst.status]}
                     </p>
-                    {inst.proofUrl && (
-                      <a
-                        href={inst.proofUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-indigo-500 underline mt-0.5 inline-block"
+                    {inst.issuePhotoUrl && (
+                      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 inline-block">
+                        <p className="text-xs font-semibold text-amber-800">Foto da pendência</p>
+                        <img
+                          src={inst.issuePhotoUrl}
+                          alt="Foto da pendência registrada pelo responsável"
+                          className="mt-1 h-20 w-20 rounded-lg object-cover border border-amber-200"
+                        />
+                        {inst.issueDescription && (
+                          <p className="text-xs text-amber-700 mt-1">{inst.issueDescription}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {proofPhotoUrl && (
+                      <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2 inline-block">
+                        <p className="text-xs font-semibold text-indigo-700">
+                          Foto enviada para correção
+                        </p>
+                        <img
+                          src={proofPhotoUrl}
+                          alt="Foto enviada pelo filho como prova de correção"
+                          className="mt-1 h-20 w-20 rounded-lg object-cover border border-indigo-200"
+                        />
+                      </div>
+                    )}
+
+                    {canRegisterIssue && issueTargetId !== inst.id && (
+                      <button
+                        onClick={() => handleOpenIssueForm(inst.id)}
+                        className="mt-2 text-xs bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg hover:bg-amber-200 transition-colors"
                       >
-                        Ver prova
-                      </a>
+                        Registrar pendência
+                      </button>
+                    )}
+
+                    {issueTargetId === inst.id && (
+                      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                        <label
+                          htmlFor={`issue-photo-${inst.id}`}
+                          className="inline-flex items-center text-xs bg-white border border-amber-200 text-amber-800 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors"
+                        >
+                          Tirar foto da pendência
+                        </label>
+                        <input
+                          id={`issue-photo-${inst.id}`}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleIssueFileSelected(e.target.files?.[0] ?? null)}
+                          className="hidden"
+                        />
+                        <p className="text-xs text-amber-700">
+                          {issueFile?.name ?? 'Nenhuma foto selecionada'}
+                        </p>
+                        {issuePreviewUrl && (
+                          <img
+                            src={issuePreviewUrl}
+                            alt="Pré-visualização da foto da pendência"
+                            className="h-20 w-20 rounded-lg object-cover border border-amber-200"
+                          />
+                        )}
+                        <input
+                          type="text"
+                          value={issueDescription}
+                          onChange={(e) => setIssueDescription(e.target.value)}
+                          className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Descrição opcional da pendência"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleSaveIssue}
+                            disabled={issueSubmitting || !issueFile}
+                            className="bg-amber-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                          >
+                            {issueSubmitting ? 'Salvando...' : 'Salvar pendência'}
+                          </button>
+                          <button
+                            onClick={() => setIssueTargetId(null)}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
 

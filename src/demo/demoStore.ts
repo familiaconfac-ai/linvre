@@ -250,6 +250,29 @@ export function markTaskInstanceWaitingApprovalDemo(instanceId: string, proofUrl
             status: 'waiting_approval',
             completedAt: new Date(),
             proofUrl: proofUrl ?? i.proofUrl,
+            proofPhotoUrl: proofUrl ?? i.proofPhotoUrl,
+          }
+        : i,
+    ),
+  }))
+}
+
+export function markTaskInstanceIssueReportedDemo(
+  instanceId: string,
+  issuePhotoUrl: string,
+  issueDescription?: string,
+) {
+  updateStore((store) => ({
+    ...store,
+    taskInstances: store.taskInstances.map((i) =>
+      i.id === instanceId
+        ? {
+            ...i,
+            status: 'issue_reported',
+            issuePhotoUrl,
+            issueDescription: issueDescription?.trim() ? issueDescription.trim() : i.issueDescription,
+            createdByParent: true,
+            isManualIssue: true,
           }
         : i,
     ),
@@ -272,6 +295,7 @@ export function markTaskInstanceCompletedDemo(
             completedAt: new Date(),
             pointsAwarded: pointsToAward,
             proofUrl: proofUrl ?? i.proofUrl,
+            proofPhotoUrl: proofUrl ?? i.proofPhotoUrl,
           }
         : i,
     ),

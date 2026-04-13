@@ -51,8 +51,13 @@ export interface TaskInstance {
   childId: string;
   taskId: string;
   dateKey: string; // YYYY-MM-DD
-  status: 'pending' | 'waiting_approval' | 'completed' | 'skipped';
+  status: 'pending' | 'issue_reported' | 'waiting_approval' | 'completed' | 'skipped';
   proofUrl?: string;
+  issuePhotoUrl?: string;
+  proofPhotoUrl?: string;
+  issueDescription?: string;
+  createdByParent?: boolean;
+  isManualIssue?: boolean;
   startedAt?: Date;
   completedAt?: Date;
   approvedAt?: Date;
