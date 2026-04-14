@@ -28,7 +28,7 @@ export default function SetupFamilyPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!firebaseUser) return
-    setError('')
+    console.log('[DEBUG] submit:start')
     setSubmitting(true)
 
     try {
@@ -42,30 +42,44 @@ export default function SetupFamilyPage() {
         createdAt: new Date(),
       }
 
+      console.log('[DEBUG] submit: creating family')
       await createFamily(family)
 
       // Update or create the parent's user profile
-      if (appUser) {
+      if (appUser && appUser.familyId) {
+        // appUser exists and already has a familyId - this is a real profile from Firestore
+        console.log('[DEBUG] submit: appUser exists with familyId, updating profile')
+        console.log('[DEBUG] submit: user:update:start')
         await updateUserProfile(firebaseUser.uid, {
           familyId: newFamilyId,
           displayName: displayName.trim() || appUser.displayName,
         })
       } else {
-        // First login — profile was never created (e.g. parent registered via Firebase console)
-        await createUserProfile({
+        // appUser doesn't exist OR is a fallback profile (no familyId) - create new profile
+        console.log('[DEBUG] submit: appUser does not exist or is fallback, creating profile')
+        console.log('[DEBUG] submit: user:create:start')
+        const newProfile = {
           id: firebaseUser.uid,
           displayName: (displayName.trim() || firebaseUser.email) ?? 'Pai/Mãe',
           email: firebaseUser.email ?? '',
-          role: 'parent',
+          role: 'parent' as const,
           familyId: newFamilyId,
           points: 0,
-          accessStatus: 'released',
+          accessStatus: 'released' as const,
           isActive: true,
           createdAt: new Date(),
-        })
+        }
+        await createUserProfile(newProfile)
       }
 
-      await refreshAppUser()
+      console.log('[DEBUG] submit: refresh:start')
+      try {
+        await refreshAppUser()
+      } catch (refreshError) {
+        console.warn('[DEBUG] submit: refresh failed, but continuing:', refreshError)
+      }
+
+      console.log('[DEBUG] submit: navigate:/parent')
       navigate('/parent')
     } catch (err) {
       console.error(err)
