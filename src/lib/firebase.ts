@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { initializeFirestore, memoryLocalCache } from 'firebase/firestore'
+import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
 export const firebaseConfig = {
@@ -12,13 +12,12 @@ export const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 }
 
-const firestoreSettings = {
-  localCache: memoryLocalCache(),
-  experimentalForceLongPolling: true,
-} as const
-
 export function isFirebaseConfigured(): boolean {
-  return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.authDomain)
+  return Boolean(
+    firebaseConfig.apiKey &&
+      firebaseConfig.projectId &&
+      firebaseConfig.authDomain
+  )
 }
 
 console.log('[FIREBASE] config-check', {
@@ -31,7 +30,7 @@ console.log('[FIREBASE] config-check', {
 
 let app: ReturnType<typeof initializeApp> | null = null
 let authInstance: ReturnType<typeof getAuth> | null = null
-let dbInstance: ReturnType<typeof initializeFirestore> | null = null
+let dbInstance: ReturnType<typeof getFirestore> | null = null
 let storageInstance: ReturnType<typeof getStorage> | null = null
 
 if (isFirebaseConfigured()) {
@@ -39,26 +38,30 @@ if (isFirebaseConfigured()) {
     console.log('[FIREBASE] initialize:start', {
       online: typeof navigator !== 'undefined' ? navigator.onLine : 'unknown',
     })
+
     app = initializeApp(firebaseConfig)
+
     console.log('[FIREBASE] initialize:app-created', {
       projectId: firebaseConfig.projectId,
       appName: app.name,
     })
 
     authInstance = getAuth(app)
+
     console.log('[FIREBASE] initialize:auth-created', {
       hasAuth: Boolean(authInstance),
     })
 
-    console.log('[FIREBASE] initialize:db-start', firestoreSettings)
-    dbInstance = initializeFirestore(app, firestoreSettings)
+    console.log('[FIREBASE] initialize:db-start')
+    dbInstance = getFirestore(app)
     console.log('[FIREBASE] initialize:db-created', {
       hasDb: Boolean(dbInstance),
-      transport: 'experimentalForceLongPolling',
-      cache: 'memoryLocalCache',
+      transport: 'default',
+      cache: 'default',
     })
 
     storageInstance = getStorage(app)
+
     console.log('[FIREBASE] initialize:storage-created', {
       hasStorage: Boolean(storageInstance),
     })
