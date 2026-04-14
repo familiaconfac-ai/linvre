@@ -6,6 +6,7 @@ import {
   approveTaskInstance,
   ensureDailyInstances,
   getTodayTaskInstancesByChild,
+  getWeekTaskInstancesByChild,
   markTaskInstanceCompleted,
   markTaskInstanceIssueReported,
   markTaskInstanceWaitingApproval,
@@ -24,6 +25,7 @@ import {
   getFamilyChildrenDemo,
   getTasksByChildDemo,
   getTodayTaskInstancesByChildDemo,
+  getWeekTaskInstancesByChildDemo,
   markTaskInstanceCompletedDemo,
   markTaskInstanceIssueReportedDemo,
   markTaskInstanceWaitingApprovalDemo,
@@ -82,6 +84,16 @@ export async function providerGetTodayTaskInstancesByChild(
   return getTodayTaskInstancesByChild(childId, familyId, dateKey)
 }
 
+export async function providerGetWeekTaskInstancesByChild(
+  childId: string,
+  familyId: string,
+  startKey: string,
+  endKey: string,
+): Promise<TaskInstance[]> {
+  if (isDemoMode()) return getWeekTaskInstancesByChildDemo(childId, familyId, startKey, endKey)
+  return getWeekTaskInstancesByChild(childId, familyId, startKey, endKey)
+}
+
 export async function providerEnsureDailyInstances(
   childId: string,
   familyId: string,
@@ -123,12 +135,29 @@ export async function providerMarkTaskInstanceIssueReported(
   instanceId: string,
   issuePhotoUrl: string,
   issueDescription?: string,
+  reportedByUserId?: string,
+  reportedByName?: string,
+  reportedByRole?: 'parent' | 'child',
 ): Promise<void> {
   if (isDemoMode()) {
-    markTaskInstanceIssueReportedDemo(instanceId, issuePhotoUrl, issueDescription)
+    markTaskInstanceIssueReportedDemo(
+      instanceId,
+      issuePhotoUrl,
+      issueDescription,
+      reportedByUserId,
+      reportedByName,
+      reportedByRole,
+    )
     return
   }
-  await markTaskInstanceIssueReported(instanceId, issuePhotoUrl, issueDescription)
+  await markTaskInstanceIssueReported(
+    instanceId,
+    issuePhotoUrl,
+    issueDescription,
+    reportedByUserId,
+    reportedByName,
+    reportedByRole,
+  )
 }
 
 export async function providerApproveTaskInstance(

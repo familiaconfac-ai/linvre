@@ -32,6 +32,26 @@ export async function getTodayTaskInstancesByChild(
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as TaskInstance)
 }
 
+export async function getWeekTaskInstancesByChild(
+  childId: string,
+  familyId: string,
+  startKey: string,
+  endKey: string,
+): Promise<TaskInstance[]> {
+  if (!db || !isFirebaseConfigured()) {
+    throw new Error('Firebase não configurado.')
+  }
+  const q = query(
+    collection(db, 'taskInstances'),
+    where('childId', '==', childId),
+    where('familyId', '==', familyId),
+    where('dateKey', '>=', startKey),
+    where('dateKey', '<=', endKey),
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as TaskInstance)
+}
+
 export async function markTaskInstanceCompleted(
   instanceId: string,
   childId: string,
@@ -78,6 +98,9 @@ export async function markTaskInstanceIssueReported(
   instanceId: string,
   issuePhotoUrl: string,
   issueDescription?: string,
+  reportedByUserId?: string,
+  reportedByName?: string,
+  reportedByRole?: 'parent' | 'child',
 ): Promise<void> {
   if (!db || !isFirebaseConfigured()) {
     throw new Error('Firebase não configurado.')
@@ -90,6 +113,19 @@ export async function markTaskInstanceIssueReported(
   }
   if (issueDescription?.trim()) {
     updates.issueDescription = issueDescription.trim()
+  }
+  if (reportedByUserId) {
+    updates.reportedByUserId = reportedByUserId
+  }
+  if (reportedByName) {
+    updates.reportedByName = reportedByName
+  }
+  if (reportedByRole) {
+    updates.reportedByRole = reportedByRole
+    updates.createdByParent = reportedByRole === 'parent'
+  } else {
+    updates.reportedByRole = 'parent'
+    updates.createdByParent = true
   }
   await updateDoc(doc(db, 'taskInstances', instanceId), updates)
 }

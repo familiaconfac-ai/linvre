@@ -11,13 +11,19 @@ import {
   providerGetFamilyChildren,
   providerGetTasksByChild,
   providerGetTodayTaskInstancesByChild,
+  providerGetWeekTaskInstancesByChild,
 } from '../../services/dataProvider'
 import { computeAccessStatus } from '../../services/accessEngine'
+import { calculateReward } from '../../utils/rewardCalculator'
+import { endOfWeekKey, startOfWeekKey } from '../../utils/dateUtils'
 import type { AppUser, AccessSummary } from '../../types'
 
 interface ChildCard {
   user: AppUser
   summary: AccessSummary
+  totalRewardToday: number
+  totalRewardWeek: number
+  pendingApprovalCount: number
 }
 
 export default function ParentDashboard() {
@@ -36,14 +42,43 @@ export default function ParentDashboard() {
     setLoading(true)
     setError('')
     try {
+      const weekStart = startOfWeekKey()
+      const weekEnd = endOfWeekKey()
       const children = await providerGetFamilyChildren(appUser.familyId)
       const cardData = await Promise.all(
         children.map(async (child) => {
           const tasks = await providerGetTasksByChild(child.id, appUser.familyId)
           await providerEnsureDailyInstances(child.id, appUser.familyId, tasks)
           const instances = await providerGetTodayTaskInstancesByChild(child.id, appUser.familyId)
+          const weekInstances = await providerGetWeekTaskInstancesByChild(
+            child.id,
+            appUser.familyId,
+            weekStart,
+            weekEnd,
+          )
           const summary = computeAccessStatus(instances, tasks)
-          return { user: child, summary }
+
+          const totalRewardToday = instances.reduce((sum, inst) => {
+            const task = tasks.find((t) => t.id === inst.taskId)
+            if (!task || inst.status === 'pending') return sum
+            return sum + (inst.rewardEarned ?? calculateReward(task, inst).rewardEarned)
+          }, 0)
+
+          const totalRewardWeek = weekInstances.reduce((sum, inst) => {
+            const task = tasks.find((t) => t.id === inst.taskId)
+            if (!task || !inst.completedAt) return sum
+            return sum + calculateReward(task, inst).rewardEarned
+          }, 0)
+
+          const pendingApprovalCount = instances.filter((i) => i.status === 'waiting_approval').length
+
+          return {
+            user: child,
+            summary,
+            totalRewardToday,
+            totalRewardWeek,
+            pendingApprovalCount,
+          }
         }),
       )
       setCards(cardData)
@@ -53,6 +88,9 @@ export default function ParentDashboard() {
       setLoading(false)
     }
   }
+
+  const totalToday = cards.reduce((sum, card) => sum + card.totalRewardToday, 0)
+  const totalWeek = cards.reduce((sum, card) => sum + card.totalRewardWeek, 0)
 
   return (
     <Layout title="Painel">
@@ -81,7 +119,19 @@ export default function ParentDashboard() {
 
       {error && <InlineMessage variant="error" message={error} className="mb-4" />}
 
-      {/* ─── Empty state ─────────────────────────────────────────────── */}
+      {!loading && !error && cards.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 mb-6">
+          <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+            <p className="text-xs text-gray-500">Total acumulado hoje</p>
+            <p className="text-2xl font-semibold text-gray-900">{totalToday} pts</p>
+          </div>
+          <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+            <p className="text-xs text-gray-500">Total acumulado na semana</p>
+            <p className="text-2xl font-semibold text-gray-900">{totalWeek} pts</p>
+          </div>
+        </div>
+      )}
+
       {!loading && !error && cards.length === 0 && (
         <EmptyState
           icon="👧"
@@ -98,56 +148,79 @@ export default function ParentDashboard() {
         />
       )}
 
-      {/* ─── Child cards ─────────────────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-2">
-        {cards.map(({ user: child, summary }) => (
-          <div
-            key={child.id}
-            className="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex flex-col gap-3"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-800 text-base">{child.displayName}</h3>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {child.age ? `${child.age} anos` : '—'} · {child.points} pontos
-                </p>
-                {child.notes && (
-                  <p className="text-xs text-amber-700 mt-0.5">Observação: {child.notes}</p>
+        {cards.map(({ user: child, summary, totalRewardToday, totalRewardWeek, pendingApprovalCount }) => {
+          const statusLabel =
+            pendingApprovalCount > 0
+              ? 'Aguardando aprovação'
+              : summary.accessStatus === 'released'
+              ? 'Em dia'
+              : summary.accessStatus === 'partial'
+              ? 'Em andamento'
+              : 'Com atraso'
+
+          return (
+            <div
+              key={child.id}
+              className="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex flex-col gap-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-gray-800 text-base">{child.displayName}</h3>
+                  {child.roleLabel && (
+                    <p className="text-xs text-gray-500 mt-0.5">{child.roleLabel}</p>
+                  )}
+                </div>
+                <StatusBadge status={child.accessStatus} size="sm" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-100">
+                  <p className="text-gray-500">Total hoje</p>
+                  <p className="text-indigo-600 font-semibold text-sm">{totalRewardToday} pts</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">
+                  <p className="text-gray-500">Total semana</p>
+                  <p className="text-gray-800 font-semibold text-sm">{totalRewardWeek} pts</p>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-500">
+                <p>Status: <span className="font-medium text-gray-700">{statusLabel}</span></p>
+                <p>Progresso: {summary.completedMandatory}/{summary.totalMandatory}</p>
+                {pendingApprovalCount > 0 && (
+                  <p>Aguardando aprovação: {pendingApprovalCount}</p>
                 )}
               </div>
-              <StatusBadge status={child.accessStatus} size="sm" />
-            </div>
 
-            <div>
-              <div className="flex justify-between text-xs text-gray-400 mb-1">
-                <span>Progresso hoje</span>
-                <span>
-                  {summary.completedMandatory}/{summary.totalMandatory} tarefas obrigatórias
-                </span>
-              </div>
-              <div className="w-full bg-gray-100 rounded-full h-2">
-                <div
-                  className={`h-2 rounded-full transition-all ${
-                    summary.accessStatus === 'released'
-                      ? 'bg-green-500'
-                      : summary.accessStatus === 'partial'
+              <div>
+                <div className="flex justify-between text-xs text-gray-400 mb-1">
+                  <span>Progresso hoje</span>
+                  <span>{summary.progressPercent}%</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      summary.accessStatus === 'released'
+                        ? 'bg-green-500'
+                        : summary.accessStatus === 'partial'
                         ? 'bg-yellow-500'
                         : 'bg-red-400'
-                  }`}
-                  style={{ width: `${summary.progressPercent}%` }}
-                />
+                    }`}
+                    style={{ width: `${summary.progressPercent}%` }}
+                  />
+                </div>
               </div>
-              <p className="text-xs text-gray-400 mt-1 text-right">{summary.progressPercent}%</p>
-            </div>
 
-            <Link
-              to={`/parent/child/${child.id}`}
-              className="block text-center text-sm text-indigo-600 hover:text-indigo-800 font-medium border border-indigo-100 rounded-lg py-1.5 hover:bg-indigo-50 transition-colors"
-            >
-              Ver detalhes →
-            </Link>
-          </div>
-        ))}
+              <Link
+                to={`/parent/child/${child.id}`}
+                className="block text-center text-sm text-indigo-600 hover:text-indigo-800 font-medium border border-indigo-100 rounded-lg py-1.5 hover:bg-indigo-50 transition-colors"
+              >
+                Ver detalhes →
+              </Link>
+            </div>
+          )
+        })}
       </div>
     </Layout>
   )

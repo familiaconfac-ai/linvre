@@ -188,7 +188,12 @@ export default function ChildDetailPage() {
           <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-100 mb-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-xl font-semibold text-gray-800">{child.displayName}</h2>
+                <h2 className="text-xl font-semibold text-gray-800">
+                  {child.displayName}
+                  {child.roleLabel && (
+                    <span className="text-sm text-gray-500 font-normal ml-2">• {child.roleLabel}</span>
+                  )}
+                </h2>
                 <p className="text-sm text-gray-400 mt-0.5">
                   {child.age ? `${child.age} anos · ` : ''}{child.points} pontos acumulados
                 </p>
@@ -259,6 +264,17 @@ export default function ChildDetailPage() {
                     <p className={`text-xs mt-1 ${statusColor[inst.status]}`}>
                       {statusLabel[inst.status]}
                     </p>
+                    {(inst.reportedByName || inst.reportedByRole) && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {inst.reportedByName
+                          ? `Pendência reportada por ${inst.reportedByName}`
+                          : inst.reportedByRole === 'child'
+                            ? child.roleLabel === 'Filha'
+                              ? 'Reportada por irmão'
+                              : 'Reportada por irmã'
+                            : 'Reportada pelos pais'}
+                      </p>
+                    )}
                     {inst.issuePhotoUrl && (
                       <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 inline-block">
                         <p className="text-xs font-semibold text-amber-800">Foto da pendência</p>

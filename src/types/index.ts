@@ -15,6 +15,7 @@ export interface AppUser {
   displayName: string;
   email: string;
   role: 'parent' | 'child';
+  roleLabel?: 'Pai' | 'Mãe' | 'Filho' | 'Filha';
   age?: number;
   notes?: string;
   familyId: string;
@@ -35,6 +36,11 @@ export interface Task {
   title: string;
   description?: string;
   points: number;
+  rewardType?: 'money' | 'points';
+  rewardValue?: number;
+  dueTime?: string;
+  halfRewardUntilMinutes?: number;
+  zeroRewardAfterMinutes?: number;
   category: 'mandatory' | 'bonus';
   type: 'checkbox' | 'photo' | 'timer';
   frequency: 'daily' | 'weekly';
@@ -58,6 +64,11 @@ export interface TaskInstance {
   issueDescription?: string;
   createdByParent?: boolean;
   isManualIssue?: boolean;
+  reportedByUserId?: string;
+  reportedByName?: string;
+  reportedByRole?: 'parent' | 'child';
+  rewardEarned?: number;
+  rewardStatus?: 'full' | 'half' | 'zero';
   startedAt?: Date;
   completedAt?: Date;
   approvedAt?: Date;

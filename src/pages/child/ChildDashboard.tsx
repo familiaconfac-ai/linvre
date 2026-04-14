@@ -6,14 +6,17 @@ import InlineMessage from '../../components/InlineMessage'
 import { useAuth } from '../../hooks/useAuth'
 import {
   providerEnsureDailyInstances,
+  providerGetFamilyChildren,
   providerGetTasksByChild,
   providerGetTodayTaskInstancesByChild,
   providerMarkTaskInstanceCompleted,
+  providerMarkTaskInstanceIssueReported,
   providerMarkTaskInstanceWaitingApproval,
   providerRecalculateChildAccessStatus,
 } from '../../services/dataProvider'
 import { computeAccessStatus } from '../../services/accessEngine'
-import type { Task, TaskInstance, AccessSummary } from '../../types'
+import { calculateReward } from '../../utils/rewardCalculator'
+import type { AppUser, Task, TaskInstance, AccessSummary } from '../../types'
 import { uploadImage } from '../../utils/imageUpload'
 
 export default function ChildDashboard() {
@@ -21,6 +24,18 @@ export default function ChildDashboard() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [instances, setInstances] = useState<TaskInstance[]>([])
   const [summary, setSummary] = useState<AccessSummary | null>(null)
+  const [siblings, setSiblings] = useState<AppUser[]>([])
+  const [selectedSiblingId, setSelectedSiblingId] = useState('')
+  const [selectedSiblingTasks, setSelectedSiblingTasks] = useState<Task[]>([])
+  const [selectedSiblingInstances, setSelectedSiblingInstances] = useState<TaskInstance[]>([])
+  const [reportMode, setReportMode] = useState(false)
+  const [selectedReportInstanceId, setSelectedReportInstanceId] = useState<string | null>(null)
+  const [reportDescription, setReportDescription] = useState('')
+  const [reportFile, setReportFile] = useState<File | null>(null)
+  const [reportPreviewUrl, setReportPreviewUrl] = useState('')
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [reportSuccess, setReportSuccess] = useState('')
+  const [reportError, setReportError] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [completingId, setCompletingId] = useState<string | null>(null)
@@ -38,17 +53,83 @@ export default function ChildDashboard() {
     setLoading(true)
     setError('')
     try {
-      const taskList = await providerGetTasksByChild(appUser.id, appUser.familyId)
+      const [taskList, familyChildren] = await Promise.all([
+        providerGetTasksByChild(appUser.id, appUser.familyId),
+        providerGetFamilyChildren(appUser.familyId),
+      ])
       await providerEnsureDailyInstances(appUser.id, appUser.familyId, taskList)
       const instanceList = await providerGetTodayTaskInstancesByChild(appUser.id, appUser.familyId)
       setTasks(taskList)
       setInstances(instanceList)
       setSummary(computeAccessStatus(instanceList, taskList))
+      setSiblings(familyChildren.filter((child) => child.id !== appUser.id))
     } catch {
       setError('Erro ao carregar suas tarefas. Tente novamente.')
     } finally {
       setLoading(false)
     }
+  }
+
+  async function loadSiblingTasks(childId: string) {
+    if (!appUser) return
+    setSelectedSiblingId(childId)
+    setSelectedReportInstanceId(null)
+    setSelectedSiblingTasks([])
+    setSelectedSiblingInstances([])
+    const taskList = await providerGetTasksByChild(childId, appUser.familyId)
+    await providerEnsureDailyInstances(childId, appUser.familyId, taskList)
+    const instanceList = await providerGetTodayTaskInstancesByChild(childId, appUser.familyId)
+    setSelectedSiblingTasks(taskList)
+    setSelectedSiblingInstances(
+      instanceList.filter((item) => item.status === 'pending' || item.status === 'waiting_approval'),
+    )
+  }
+
+  async function handleReportSiblingIssue() {
+    if (!appUser || !selectedSiblingId || !selectedReportInstanceId || !reportFile) {
+      setReportError('Escolha irmão, tarefa e foto para reportar.')
+      return
+    }
+    setReportSubmitting(true)
+    setReportError('')
+    try {
+      const issuePhotoUrl = await uploadImage(reportFile)
+      await providerMarkTaskInstanceIssueReported(
+        selectedReportInstanceId,
+        issuePhotoUrl,
+        reportDescription,
+        appUser.id,
+        appUser.displayName,
+        'child',
+      )
+      await providerRecalculateChildAccessStatus(selectedSiblingId, appUser.familyId)
+      setReportSuccess('Pendência registrada com foto para o irmão.')
+      setReportDescription('')
+      setReportFile(null)
+      if (reportPreviewUrl) {
+        URL.revokeObjectURL(reportPreviewUrl)
+      }
+      setReportPreviewUrl('')
+      setReportMode(false)
+      await loadSiblingTasks(selectedSiblingId)
+    } catch {
+      setReportError('Erro ao registrar pendência.')
+    } finally {
+      setReportSubmitting(false)
+    }
+  }
+
+  function handleReportFileSelected(file: File | null) {
+    if (reportPreviewUrl) {
+      URL.revokeObjectURL(reportPreviewUrl)
+    }
+    if (!file) {
+      setReportPreviewUrl('')
+      setReportFile(null)
+      return
+    }
+    setReportFile(file)
+    setReportPreviewUrl(URL.createObjectURL(file))
   }
 
   async function handleComplete(inst: TaskInstance, task: Task) {
@@ -154,6 +235,8 @@ export default function ChildDashboard() {
     blocked: 'bg-red-400',
   }
 
+  const selectedSiblingTaskMap = new Map(selectedSiblingTasks.map((t) => [t.id, t]))
+
   return (
     <Layout title="Missão do dia">
       {loading && <LoadingSpinner />}
@@ -185,6 +268,135 @@ export default function ChildDashboard() {
               </p>
             )}
           </div>
+
+          {/* ─── Daily reward card ─── */}
+          <div className="mb-6 bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-xl p-5 text-white shadow-lg">
+            <p className="text-sm opacity-90">Recompensa acumulada hoje</p>
+            <p className="text-3xl font-bold">
+              {sortedInstances.reduce((sum, inst) => {
+                const task = taskMap.get(inst.taskId)
+                if (!task || inst.status !== 'completed') return sum
+                return sum + calculateReward(task, inst).rewardEarned
+              }, 0)} pontos
+            </p>
+          </div>
+
+          {siblings.length > 0 && (
+            <div className="mb-6 bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Reportar pendência para outro filho</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Abra um relatório simples, escolha o irmão, a tarefa e envie uma foto.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReportMode((prev) => !prev)}
+                  className="bg-amber-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors"
+                >
+                  {reportMode ? 'Fechar relatório' : 'Reportar pendência'}
+                </button>
+              </div>
+
+              {reportMode && (
+                <div className="mt-4 space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-xs text-gray-600">
+                      Irmão / irmã
+                      <select
+                        value={selectedSiblingId}
+                        onChange={async (e) => {
+                          const siblingId = e.target.value
+                          setSelectedSiblingId(siblingId)
+                          setSelectedReportInstanceId(null)
+                          if (siblingId) {
+                            await loadSiblingTasks(siblingId)
+                          }
+                        }}
+                        className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-sm"
+                      >
+                        <option value="">Selecione um irmão</option>
+                        {siblings.map((child) => (
+                          <option key={child.id} value={child.id}>
+                            {child.displayName} {child.roleLabel ? `(${child.roleLabel})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block text-xs text-gray-600">
+                      Tarefa
+                      <select
+                        value={selectedReportInstanceId ?? ''}
+                        onChange={(e) => setSelectedReportInstanceId(e.target.value)}
+                        disabled={!selectedSiblingId || selectedSiblingInstances.length === 0}
+                        className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-sm"
+                      >
+                        <option value="">Selecione a tarefa</option>
+                        {selectedSiblingInstances.map((inst) => {
+                          const task = selectedSiblingTaskMap.get(inst.taskId)
+                          return (
+                            <option key={inst.id} value={inst.id}>
+                              {task?.title ?? 'Tarefa'} • {inst.status}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-600">Descrição</label>
+                    <input
+                      type="text"
+                      value={reportDescription}
+                      onChange={(e) => setReportDescription(e.target.value)}
+                      placeholder="Descrição opcional da pendência"
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="report-photo"
+                      className="inline-flex items-center text-xs bg-gray-100 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors"
+                    >
+                      Selecionar foto
+                    </label>
+                    <input
+                      id="report-photo"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleReportFileSelected(e.target.files?.[0] ?? null)}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {reportFile?.name ?? 'Nenhuma foto selecionada'}
+                    </p>
+                    {reportPreviewUrl && (
+                      <img
+                        src={reportPreviewUrl}
+                        alt="Pré-visualização da foto da pendência"
+                        className="mt-2 h-20 w-20 rounded-lg object-cover border border-gray-200"
+                      />
+                    )}
+                  </div>
+
+                  {reportError && <InlineMessage variant="error" message={reportError} />}
+
+                  <button
+                    type="button"
+                    onClick={handleReportSiblingIssue}
+                    disabled={reportSubmitting || !selectedSiblingId || !selectedReportInstanceId || !reportFile}
+                    className="bg-amber-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                  >
+                    {reportSubmitting ? 'Enviando...' : 'Registrar pendência'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ─── Progress bar ─── */}
           <div className="mb-6">
@@ -230,6 +442,12 @@ export default function ChildDashboard() {
               const isCompleting = completingId === inst.id
               const proofPhotoUrl = inst.proofPhotoUrl ?? inst.proofUrl
               const requiresCorrectionPhoto = task.type === 'photo' || Boolean(inst.issuePhotoUrl)
+              const reward = calculateReward(task, inst)
+              const overdue =
+                task.dueTime &&
+                !inst.completedAt &&
+                inst.status !== 'issue_reported' &&
+                new Date(`${inst.dateKey}T${task.dueTime}:00`).getTime() < Date.now()
 
               return (
                 <div
@@ -238,10 +456,12 @@ export default function ChildDashboard() {
                     isWaiting
                       ? 'border-yellow-300 bg-yellow-50'
                       : inst.status === 'issue_reported'
-                      ? 'border-amber-300 bg-amber-50'
-                      : isDone
-                      ? 'border-green-100 bg-green-50'
-                      : 'border-gray-200'
+                        ? 'border-amber-300 bg-amber-50'
+                        : isDone
+                          ? 'border-green-100 bg-green-50'
+                          : overdue
+                            ? 'border-red-300 bg-red-50'
+                            : 'border-gray-200'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -265,7 +485,62 @@ export default function ChildDashboard() {
                         <p className="text-xs text-gray-400 mt-0.5">{task.description}</p>
                       )}
 
-                      <p className="text-xs text-indigo-500 mt-1">+{task.points} pts</p>
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-500">
+                        <div>
+                          <span className="font-medium text-gray-700">Recompensa:</span> {task.rewardValue ?? task.points} pts
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Prazo:</span> {task.dueTime ?? 'Sem prazo'}
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Ganho:</span>{' '}
+                          {inst.completedAt ? `${reward.rewardEarned} pts` : '—'}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        {reward ? (
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 ${
+                              reward.rewardStatus === 'full'
+                                ? 'bg-green-100 text-green-700'
+                                : reward.rewardStatus === 'half'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {reward.rewardStatus === 'full'
+                              ? 'Integral'
+                              : reward.rewardStatus === 'half'
+                                ? 'Metade'
+                                : 'Sem recompensa'}
+                          </span>
+                        ) : isWaiting ? (
+                          <span className="inline-flex items-center rounded-full bg-yellow-100 text-yellow-700 px-2.5 py-1">
+                            Aguardando aprovação
+                          </span>
+                        ) : inst.status === 'issue_reported' ? (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-700 px-2.5 py-1">
+                            Pendência reportada
+                          </span>
+                        ) : null}
+
+                        {overdue && (
+                          <span className="inline-flex items-center rounded-full bg-red-100 text-red-700 px-2.5 py-1">
+                            Tarefa atrasada
+                          </span>
+                        )}
+                      </div>
+
+                      {inst.reportedByName || inst.reportedByRole ? (
+                        <p className="text-xs text-gray-600 mt-2">
+                          {inst.reportedByName
+                            ? `Pendência reportada por ${inst.reportedByName}`
+                            : inst.reportedByRole === 'child'
+                              ? 'Reportada por irmão/irmã'
+                              : 'Reportada pelos pais'}
+                        </p>
+                      ) : null}
 
                       {inst.issuePhotoUrl && (
                         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
@@ -278,13 +553,9 @@ export default function ChildDashboard() {
                           {inst.issueDescription && (
                             <p className="text-xs text-amber-700 mt-1">{inst.issueDescription}</p>
                           )}
-                          <p className="text-xs text-amber-700 mt-1">
-                            Corrija este ponto e envie uma nova foto para aprovação.
-                          </p>
                         </div>
                       )}
 
-                      {/* Photo type: file input + preview */}
                       {requiresCorrectionPhoto && !isDone && !isWaiting && (
                         <div className="mt-2">
                           <label
@@ -343,8 +614,8 @@ export default function ChildDashboard() {
                         {isCompleting
                           ? '...'
                           : task.requiresApproval
-                          ? 'Enviar'
-                          : 'Concluir'}
+                            ? 'Enviar'
+                            : 'Concluir'}
                       </button>
                     )}
 

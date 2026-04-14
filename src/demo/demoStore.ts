@@ -207,6 +207,22 @@ export function getTodayTaskInstancesByChildDemo(
   )
 }
 
+export function getWeekTaskInstancesByChildDemo(
+  childId: string,
+  familyId: string,
+  startKey: string,
+  endKey: string,
+): TaskInstance[] {
+  const store = getDemoStore()
+  return store.taskInstances.filter(
+    (i) =>
+      i.childId === childId &&
+      i.familyId === familyId &&
+      i.dateKey >= startKey &&
+      i.dateKey <= endKey,
+  )
+}
+
 export function ensureDailyInstancesDemo(
   childId: string,
   familyId: string,
@@ -261,6 +277,9 @@ export function markTaskInstanceIssueReportedDemo(
   instanceId: string,
   issuePhotoUrl: string,
   issueDescription?: string,
+  reportedByUserId?: string,
+  reportedByName?: string,
+  reportedByRole?: 'parent' | 'child',
 ) {
   updateStore((store) => ({
     ...store,
@@ -271,8 +290,11 @@ export function markTaskInstanceIssueReportedDemo(
             status: 'issue_reported',
             issuePhotoUrl,
             issueDescription: issueDescription?.trim() ? issueDescription.trim() : i.issueDescription,
-            createdByParent: true,
+            createdByParent: reportedByRole !== 'child',
             isManualIssue: true,
+            reportedByUserId: reportedByUserId ?? i.reportedByUserId,
+            reportedByName: reportedByName ?? i.reportedByName,
+            reportedByRole: reportedByRole ?? i.reportedByRole ?? 'parent',
           }
         : i,
     ),

@@ -27,20 +27,16 @@ export default function Layout({ children, title }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link to={homeRoute} className="flex items-center gap-2">
-              <AppLogo size="sm" />
-              <span className="text-indigo-600 font-bold">LinVre</span>
-            </Link>
-            {title && <span className="text-gray-500 text-xs">{title}</span>}
-          </div>
+      <header className="bg-white border-b border-gray-100">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <Link to={homeRoute} className="flex items-center gap-2 flex-shrink-0">
+            <AppLogo size="sm" />
+          </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 ml-auto">
             {localMode && (
               <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 hidden sm:inline-flex">
-                Modo Demo
+                Demo
               </span>
             )}
 
@@ -48,7 +44,7 @@ export default function Layout({ children, title }: Props) {
               <select
                 value={appUser?.id ?? ''}
                 onChange={(e) => void handleSwitchDemoUser(e.target.value)}
-                className="text-xs border border-gray-300 rounded-lg px-2 py-1 bg-white"
+                className="text-xs border border-gray-200 rounded px-2 py-1 bg-white hover:border-gray-300 transition-colors"
               >
                 {demoUsers.map((u) => (
                   <option key={u.id} value={u.id}>
@@ -60,20 +56,20 @@ export default function Layout({ children, title }: Props) {
 
             {appUser && (
               <>
-                <span className="text-sm text-gray-500 hidden sm:block">
+                <span className="text-xs text-gray-500 hidden sm:block">
                   {appUser.displayName}
                 </span>
                 {localMode && (
                   <button
                     onClick={resetDemo}
-                    className="text-xs text-amber-700 hover:text-amber-900 transition-colors"
+                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                   >
-                    Reset Demo
+                    Reset
                   </button>
                 )}
                 <button
                   onClick={handleLogout}
-                  className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   Sair
                 </button>
@@ -83,7 +79,10 @@ export default function Layout({ children, title }: Props) {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">{children}</main>
+      <main className="max-w-4xl mx-auto px-4 py-6">
+        {title && <div className="text-xs text-gray-400 mb-4">{title}</div>}
+        {children}
+      </main>
     </div>
   )
 }
