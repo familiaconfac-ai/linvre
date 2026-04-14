@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import Layout from '../../components/Layout'
-import StatusBadge from '../../components/StatusBadge'
-import LoadingSpinner from '../../components/LoadingSpinner'
-import InlineMessage from '../../components/InlineMessage'
 import EmptyState from '../../components/EmptyState'
+import InlineMessage from '../../components/InlineMessage'
+import Layout from '../../components/Layout'
+import LoadingSpinner from '../../components/LoadingSpinner'
+import StatusBadge from '../../components/StatusBadge'
 import { useAuth } from '../../hooks/useAuth'
+import { computeAccessStatus } from '../../services/accessEngine'
 import {
   providerEnsureDailyInstances,
   providerGetFamilyChildren,
@@ -13,10 +14,9 @@ import {
   providerGetTodayTaskInstancesByChild,
   providerGetWeekTaskInstancesByChild,
 } from '../../services/dataProvider'
-import { computeAccessStatus } from '../../services/accessEngine'
-import { calculateReward } from '../../utils/rewardCalculator'
+import type { AccessSummary, AppUser } from '../../types'
 import { endOfWeekKey, startOfWeekKey } from '../../utils/dateUtils'
-import type { AppUser, AccessSummary } from '../../types'
+import { calculateReward } from '../../utils/rewardCalculator'
 
 interface ChildCard {
   user: AppUser
@@ -27,47 +27,89 @@ interface ChildCard {
 }
 
 export default function ParentDashboard() {
-  const { appUser, localMode } = useAuth()
+  const { appUser, localMode, loading: authLoading, firebaseUser, profileLoadError } = useAuth()
   const [cards, setCards] = useState<ChildCard[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  console.log('[DEBUG] ParentDashboard:', {
-    appUser: appUser ? { id: appUser.id, role: appUser.role, familyId: appUser.familyId } : null,
-    localMode,
+  console.log('[PARENT_DASHBOARD] render', {
     loading,
-    error
+    authLoading,
+    firebaseUser: firebaseUser
+      ? { uid: firebaseUser.uid, email: firebaseUser.email }
+      : null,
+    appUser: appUser
+      ? {
+          id: appUser.id,
+          familyId: appUser.familyId,
+          role: appUser.role,
+        }
+      : null,
+    profileLoadError,
+    error,
   })
 
   useEffect(() => {
-    if (!appUser) {
-      console.log('[DEBUG] ParentDashboard: no appUser, skipping loadChildren')
-      return
-    }
-    console.log('[DEBUG] ParentDashboard: appUser exists, calling loadChildren')
-    loadChildren()
-  }, [appUser]) // eslint-disable-line react-hooks/exhaustive-deps
+    console.log('[PARENT_DASHBOARD] effect:start', {
+      loading,
+      authLoading,
+      appUser: appUser
+        ? {
+            id: appUser.id,
+            familyId: appUser.familyId,
+            role: appUser.role,
+          }
+        : null,
+      profileLoadError,
+    })
 
-  async function loadChildren() {
+    if (authLoading) return
+
     if (!appUser) {
-      console.log('[DEBUG] loadChildren: no appUser, returning')
+      console.log('[PARENT_DASHBOARD] effect:no-app-user -> stop-local-loading')
+      setCards([])
+      setLoading(false)
       return
     }
-    console.log('[DEBUG] loadChildren: starting, familyId:', appUser.familyId)
+
+    if (!appUser.familyId) {
+      console.log('[PARENT_DASHBOARD] effect:fallback-without-family -> stop-local-loading')
+      setCards([])
+      setLoading(false)
+      return
+    }
+
+    if (appUser.role !== 'parent') {
+      console.log('[PARENT_DASHBOARD] effect:wrong-role -> stop-local-loading')
+      setCards([])
+      setLoading(false)
+      return
+    }
+
+    void loadChildren(appUser)
+  }, [appUser, authLoading, profileLoadError])
+
+  async function loadChildren(currentUser: AppUser) {
+    console.log('[PARENT_DASHBOARD] loadChildren:start', {
+      familyId: currentUser.familyId,
+      role: currentUser.role,
+      profileLoadError,
+    })
     setLoading(true)
     setError('')
+
     try {
       const weekStart = startOfWeekKey()
       const weekEnd = endOfWeekKey()
-      const children = await providerGetFamilyChildren(appUser.familyId)
+      const children = await providerGetFamilyChildren(currentUser.familyId)
       const cardData = await Promise.all(
         children.map(async (child) => {
-          const tasks = await providerGetTasksByChild(child.id, appUser.familyId)
-          await providerEnsureDailyInstances(child.id, appUser.familyId, tasks)
-          const instances = await providerGetTodayTaskInstancesByChild(child.id, appUser.familyId)
+          const tasks = await providerGetTasksByChild(child.id, currentUser.familyId)
+          await providerEnsureDailyInstances(child.id, currentUser.familyId, tasks)
+          const instances = await providerGetTodayTaskInstancesByChild(child.id, currentUser.familyId)
           const weekInstances = await providerGetWeekTaskInstancesByChild(
             child.id,
-            appUser.familyId,
+            currentUser.familyId,
             weekStart,
             weekEnd,
           )
@@ -96,12 +138,16 @@ export default function ParentDashboard() {
           }
         }),
       )
+
+      console.log('[PARENT_DASHBOARD] loadChildren:success', {
+        childCount: cardData.length,
+      })
       setCards(cardData)
-    } catch {
-      console.log('[DEBUG] loadChildren: error occurred')
+    } catch (loadError) {
+      console.log('[PARENT_DASHBOARD] loadChildren:error', loadError)
       setError('Erro ao carregar filhos.')
     } finally {
-      console.log('[DEBUG] loadChildren: finished, setting loading to false')
+      console.log('[PARENT_DASHBOARD] loadChildren:end -> loading:false')
       setLoading(false)
     }
   }
@@ -109,11 +155,32 @@ export default function ParentDashboard() {
   const totalToday = cards.reduce((sum, card) => sum + card.totalRewardToday, 0)
   const totalWeek = cards.reduce((sum, card) => sum + card.totalRewardWeek, 0)
 
+  if (!authLoading && !appUser) {
+    return (
+      <Layout title="Painel">
+        <InlineMessage
+          variant="error"
+          message="Perfil do usuario ainda nao foi carregado. A rota nao fica mais presa em loading."
+        />
+      </Layout>
+    )
+  }
+
+  if (!authLoading && appUser && !appUser.familyId) {
+    return (
+      <Layout title="Painel">
+        <InlineMessage
+          variant="error"
+          message="Perfil carregado sem familyId. O usuario precisa concluir o setup da familia."
+        />
+      </Layout>
+    )
+  }
+
   return (
     <Layout title="Painel">
-      {/* ─── Action bar ──────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
-        <h2 className="text-xl font-semibold text-gray-800">Filhos da Família</h2>
+        <h2 className="text-xl font-semibold text-gray-800">Filhos da Familia</h2>
         <div className="flex gap-2">
           {!localMode && (
             <Link
@@ -153,15 +220,21 @@ export default function ParentDashboard() {
         <EmptyState
           icon="👧"
           title="Nenhum filho cadastrado ainda"
-          description={localMode ? 'No demo, os filhos já vêm pré-cadastrados.' : 'Comece adicionando o primeiro filho à família.'}
-          action={!localMode ? (
-            <Link
-              to="/parent/add-child"
-              className="bg-indigo-600 text-white text-sm px-5 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              Adicionar Filho
-            </Link>
-          ) : undefined}
+          description={
+            localMode
+              ? 'No demo, os filhos ja vem pre-cadastrados.'
+              : 'Comece adicionando o primeiro filho a familia.'
+          }
+          action={
+            !localMode ? (
+              <Link
+                to="/parent/add-child"
+                className="bg-indigo-600 text-white text-sm px-5 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                Adicionar Filho
+              </Link>
+            ) : undefined
+          }
         />
       )}
 
@@ -169,12 +242,12 @@ export default function ParentDashboard() {
         {cards.map(({ user: child, summary, totalRewardToday, totalRewardWeek, pendingApprovalCount }) => {
           const statusLabel =
             pendingApprovalCount > 0
-              ? 'Aguardando aprovação'
+              ? 'Aguardando aprovacao'
               : summary.accessStatus === 'released'
-              ? 'Em dia'
-              : summary.accessStatus === 'partial'
-              ? 'Em andamento'
-              : 'Com atraso'
+                ? 'Em dia'
+                : summary.accessStatus === 'partial'
+                  ? 'Em andamento'
+                  : 'Com atraso'
 
           return (
             <div
@@ -184,9 +257,7 @@ export default function ParentDashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="font-semibold text-gray-800 text-base">{child.displayName}</h3>
-                  {child.roleLabel && (
-                    <p className="text-xs text-gray-500 mt-0.5">{child.roleLabel}</p>
-                  )}
+                  {child.roleLabel && <p className="text-xs text-gray-500 mt-0.5">{child.roleLabel}</p>}
                 </div>
                 <StatusBadge status={child.accessStatus} size="sm" />
               </div>
@@ -203,11 +274,13 @@ export default function ParentDashboard() {
               </div>
 
               <div className="text-xs text-gray-500">
-                <p>Status: <span className="font-medium text-gray-700">{statusLabel}</span></p>
-                <p>Progresso: {summary.completedMandatory}/{summary.totalMandatory}</p>
-                {pendingApprovalCount > 0 && (
-                  <p>Aguardando aprovação: {pendingApprovalCount}</p>
-                )}
+                <p>
+                  Status: <span className="font-medium text-gray-700">{statusLabel}</span>
+                </p>
+                <p>
+                  Progresso: {summary.completedMandatory}/{summary.totalMandatory}
+                </p>
+                {pendingApprovalCount > 0 && <p>Aguardando aprovacao: {pendingApprovalCount}</p>}
               </div>
 
               <div>
@@ -221,8 +294,8 @@ export default function ParentDashboard() {
                       summary.accessStatus === 'released'
                         ? 'bg-green-500'
                         : summary.accessStatus === 'partial'
-                        ? 'bg-yellow-500'
-                        : 'bg-red-400'
+                          ? 'bg-yellow-500'
+                          : 'bg-red-400'
                     }`}
                     style={{ width: `${summary.progressPercent}%` }}
                   />
@@ -233,7 +306,7 @@ export default function ParentDashboard() {
                 to={`/parent/child/${child.id}`}
                 className="block text-center text-sm text-indigo-600 hover:text-indigo-800 font-medium border border-indigo-100 rounded-lg py-1.5 hover:bg-indigo-50 transition-colors"
               >
-                Ver detalhes →
+                Ver detalhes -&gt;
               </Link>
             </div>
           )

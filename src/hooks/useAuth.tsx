@@ -65,10 +65,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void setPersistence(auth, browserLocalPersistence)
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('[AUTH] onAuthStateChanged:start', {
+        loading,
+        firebaseUser: user
+          ? { uid: user.uid, email: user.email }
+          : null,
+        currentAppUser: appUser
+          ? {
+              id: appUser.id,
+              familyId: appUser.familyId,
+              role: appUser.role,
+            }
+          : null,
+        profileLoadError,
+      })
       setFirebaseUser(user)
       if (user) {
         try {
           const profile = await getCurrentUserProfile(user.uid)
+          console.log('[AUTH] onAuthStateChanged:profile-loaded', {
+            uid: user.uid,
+            profile: profile
+              ? {
+                  id: profile.id,
+                  familyId: profile.familyId,
+                  role: profile.role,
+                }
+              : null,
+          })
           setAppUser(profile)
           setProfileLoadError(null) // Limpa erro anterior se conseguiu carregar
         } catch (err) {
@@ -134,6 +158,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAppUser(null)
         setProfileLoadError(null)
       }
+      console.log('[AUTH] onAuthStateChanged:end', {
+        nextLoading: false,
+        firebaseUser: user ? user.uid : null,
+      })
       setLoading(false)
     })
     return unsubscribe
@@ -166,24 +194,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const refreshAppUser = async () => {
-    console.log('[DEBUG] refreshAppUser: called')
+    console.log('[AUTH] refreshAppUser:start', {
+      loading,
+      firebaseUser: firebaseUser
+        ? { uid: firebaseUser.uid, email: firebaseUser.email }
+        : null,
+      appUser: appUser
+        ? {
+            id: appUser.id,
+            familyId: appUser.familyId,
+            role: appUser.role,
+          }
+        : null,
+      profileLoadError,
+    })
     if (!configured) {
-      console.log('[DEBUG] refreshAppUser: local mode, setting demo user')
+      console.log('[AUTH] refreshAppUser:local-mode')
       setDemoUsers(providerGetDemoUsers())
       setAppUser(providerGetCurrentDemoUser())
       return
     }
     if (!firebaseUser) {
-      console.log('[DEBUG] refreshAppUser: no firebaseUser, returning')
+      console.log('[AUTH] refreshAppUser:no-firebase-user')
       return
     }
     try {
-      console.log('[DEBUG] refreshAppUser: fetching profile for uid:', firebaseUser.uid)
+      console.log('[AUTH] refreshAppUser:fetching-profile', { uid: firebaseUser.uid })
       const profile = await getCurrentUserProfile(firebaseUser.uid)
-      console.log('[DEBUG] refreshAppUser: profile loaded:', profile ? { id: profile.id, role: profile.role, familyId: profile.familyId } : null)
-      setAppUser(profile)
+      console.log('[AUTH] refreshAppUser:profile-loaded', {
+        profile: profile
+          ? {
+              id: profile.id,
+              role: profile.role,
+              familyId: profile.familyId,
+            }
+          : null,
+      })
+
+      if (profile) {
+        setAppUser(profile)
+        setProfileLoadError(null)
+        return
+      }
+
+      console.warn('[AUTH] refreshAppUser:profile-null-preserving-current-state', {
+        currentAppUser: appUser
+          ? {
+              id: appUser.id,
+              role: appUser.role,
+              familyId: appUser.familyId,
+            }
+          : null,
+      })
     } catch (err) {
-      console.warn('[DEBUG] refreshAppUser: failed to load profile:', err)
+      console.warn('[AUTH] refreshAppUser:failed', err)
     }
   }
 
