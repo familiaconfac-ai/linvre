@@ -37,6 +37,7 @@ interface AuthContextValue {
   signInDemo: (userId: string) => Promise<void>
   logout: () => Promise<void>
   refreshAppUser: () => Promise<void>
+  setAppUser: (user: AppUser | null) => void
   resetDemo: () => void
 }
 
@@ -165,17 +166,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const refreshAppUser = async () => {
+    console.log('[DEBUG] refreshAppUser: called')
     if (!configured) {
+      console.log('[DEBUG] refreshAppUser: local mode, setting demo user')
       setDemoUsers(providerGetDemoUsers())
       setAppUser(providerGetCurrentDemoUser())
       return
     }
-    if (!firebaseUser) return
+    if (!firebaseUser) {
+      console.log('[DEBUG] refreshAppUser: no firebaseUser, returning')
+      return
+    }
     try {
+      console.log('[DEBUG] refreshAppUser: fetching profile for uid:', firebaseUser.uid)
       const profile = await getCurrentUserProfile(firebaseUser.uid)
+      console.log('[DEBUG] refreshAppUser: profile loaded:', profile ? { id: profile.id, role: profile.role, familyId: profile.familyId } : null)
       setAppUser(profile)
     } catch (err) {
-      console.warn('Failed to refresh user profile:', err)
+      console.warn('[DEBUG] refreshAppUser: failed to load profile:', err)
     }
   }
 
@@ -198,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInDemo,
         logout,
         refreshAppUser,
+        setAppUser,
         resetDemo,
       }}
     >

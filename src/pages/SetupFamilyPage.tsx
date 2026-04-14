@@ -7,7 +7,7 @@ import { updateUserProfile, createUserProfile } from '../services/users'
 import type { Family } from '../types'
 
 export default function SetupFamilyPage() {
-  const { firebaseUser, appUser, loading, refreshAppUser } = useAuth()
+  const { firebaseUser, appUser, loading, refreshAppUser, setAppUser } = useAuth()
   const navigate = useNavigate()
   const [familyName, setFamilyName] = useState('')
   const [displayName, setDisplayName] = useState(appUser?.displayName ?? '')
@@ -22,6 +22,7 @@ export default function SetupFamilyPage() {
 
   // Already fully set up → go to correct dashboard
   if (appUser?.familyId) {
+    console.log('[DEBUG] SetupFamilyPage: appUser has familyId, redirecting to dashboard:', appUser.role === 'parent' ? '/parent' : '/child')
     return <Navigate to={appUser.role === 'parent' ? '/parent' : '/child'} replace />
   }
 
@@ -70,6 +71,9 @@ export default function SetupFamilyPage() {
           createdAt: new Date(),
         }
         await createUserProfile(newProfile)
+        // Update local state immediately to avoid relying on refreshAppUser
+        console.log('[DEBUG] submit: updating local appUser state')
+        setAppUser(newProfile)
       }
 
       console.log('[DEBUG] submit: refresh:start')

@@ -12,6 +12,12 @@ export default function Layout({ children, title }: Props) {
   const { appUser, logout, localMode, demoUsers, signInDemo, resetDemo, profileLoadError } = useAuth()
   const navigate = useNavigate()
 
+  console.log('[DEBUG] Layout:', {
+    appUser: appUser ? { id: appUser.id, role: appUser.role, familyId: appUser.familyId } : null,
+    profileLoadError,
+    title
+  })
+
   const handleLogout = async () => {
     await logout()
     navigate('/login')

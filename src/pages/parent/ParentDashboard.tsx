@@ -32,13 +32,28 @@ export default function ParentDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  console.log('[DEBUG] ParentDashboard:', {
+    appUser: appUser ? { id: appUser.id, role: appUser.role, familyId: appUser.familyId } : null,
+    localMode,
+    loading,
+    error
+  })
+
   useEffect(() => {
-    if (!appUser) return
+    if (!appUser) {
+      console.log('[DEBUG] ParentDashboard: no appUser, skipping loadChildren')
+      return
+    }
+    console.log('[DEBUG] ParentDashboard: appUser exists, calling loadChildren')
     loadChildren()
   }, [appUser]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadChildren() {
-    if (!appUser) return
+    if (!appUser) {
+      console.log('[DEBUG] loadChildren: no appUser, returning')
+      return
+    }
+    console.log('[DEBUG] loadChildren: starting, familyId:', appUser.familyId)
     setLoading(true)
     setError('')
     try {
@@ -83,8 +98,10 @@ export default function ParentDashboard() {
       )
       setCards(cardData)
     } catch {
+      console.log('[DEBUG] loadChildren: error occurred')
       setError('Erro ao carregar filhos.')
     } finally {
+      console.log('[DEBUG] loadChildren: finished, setting loading to false')
       setLoading(false)
     }
   }
