@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { Navigate, useNavigate } from 'react-router-dom'
 import AppLogo from '../components/AppLogo'
+import LoadingSpinner from '../components/LoadingSpinner'
 import { useAuth } from '../hooks/useAuth'
 import { createFamily } from '../services/families'
 import { createUserProfile, updateUserProfile } from '../services/users'
@@ -21,7 +23,25 @@ export default function SetupFamilyPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  if (loading) return null
+  if (loading) {
+    console.log('[SETUP_FAMILY] state:real-loading', {
+      firebaseUser: firebaseUser ? { uid: firebaseUser.uid, email: firebaseUser.email } : null,
+      appUser: appUser
+        ? {
+            id: appUser.id,
+            familyId: appUser.familyId,
+            role: appUser.role,
+          }
+        : null,
+      profileLoadError,
+    })
+
+    return (
+      <div className="min-h-screen bg-indigo-50 flex items-center justify-center px-4">
+        <LoadingSpinner />
+      </div>
+    )
+  }
 
   if (!firebaseUser) return <Navigate to="/login" replace />
 
@@ -84,7 +104,9 @@ export default function SetupFamilyPage() {
           role: nextProfile.role,
         },
       })
-      setAppUser(nextProfile)
+      flushSync(() => {
+        setAppUser(nextProfile)
+      })
 
       const shouldUpdateExistingProfile = Boolean(appUser && !profileLoadError)
 
@@ -130,7 +152,7 @@ export default function SetupFamilyPage() {
         },
         profileLoadError,
       })
-      navigate('/parent')
+      navigate('/parent', { replace: true })
     } catch (err) {
       console.error(err)
       setError('Erro ao criar familia. Tente novamente.')
