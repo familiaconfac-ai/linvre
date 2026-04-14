@@ -1,14 +1,20 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import { registerUserWithoutSession } from '../services/auth'
 import { useAuth } from '../hooks/useAuth'
 import AppLogo from '../components/AppLogo'
 
 export default function LoginPage() {
   const { signIn, appUser, loading, localMode, demoUsers, signInDemo, resetDemo } = useAuth()
   const navigate = useNavigate()
+  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const [profileRole, setProfileRole] = useState<'Pai' | 'Mãe' | 'Filho' | 'Filha'>('Pai')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   if (loading) {
@@ -38,13 +44,32 @@ export default function LoginPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setSubmitting(true)
     try {
-      await signIn(email, password)
-      // AuthProvider state change will trigger re-render → Navigate above
+      if (mode === 'login') {
+        await signIn(email, password)
+        // AuthProvider state change will trigger re-render → Navigate above
+      } else {
+        const role = profileRole === 'Pai' || profileRole === 'Mãe' ? 'parent' : 'child'
+        await registerUserWithoutSession(email, password, {
+          displayName: name.trim() || profileRole,
+          email,
+          role,
+          roleLabel: profileRole,
+          familyId: '',
+          points: 0,
+          accessStatus: 'released',
+          isActive: true,
+          createdAt: new Date(),
+        })
+        setSuccess('Conta criada com sucesso. Agora faça login.')
+        setMode('login')
+        setPassword('')
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Erro ao fazer login'
-      setError(msg.includes('Firebase') ? msg : 'E-mail ou senha inválidos.')
+      const msg = err instanceof Error ? err.message : 'Erro ao processar solicitação.'
+      setError(msg.includes('Firebase') ? msg : mode === 'login' ? 'E-mail ou senha inválidos.' : 'Erro ao registrar. Verifique os dados.')
     } finally {
       setSubmitting(false)
     }
@@ -58,6 +83,41 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-indigo-600">LinVre</h1>
           <p className="text-gray-400 text-sm mt-1">Link Livre</p>
         </div>
+
+        {!localMode && (
+          <div className="mb-5 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login')
+                setError('')
+                setSuccess('')
+              }}
+              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
+                mode === 'login'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register')
+                setError('')
+                setSuccess('')
+              }}
+              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${
+                mode === 'register'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Registrar
+            </button>
+          </div>
+        )}
 
         {localMode && (
           <div className="mb-5">
@@ -96,6 +156,20 @@ export default function LoginPage() {
 
         {!localMode && (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'register' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  placeholder="Seu nome"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
               <input
@@ -109,28 +183,80 @@ export default function LoginPage() {
               />
             </div>
 
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                autoComplete="current-password"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-24 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+              >
+                {showPassword ? 'Ocultar' : 'Mostrar'}
+              </button>
             </div>
 
+            {mode === 'register' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Escolha seu perfil</label>
+                <select
+                  value={profileRole}
+                  onChange={(e) => setProfileRole(e.target.value as 'Pai' | 'Mãe' | 'Filho' | 'Filha')}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                >
+                  <option>Pai</option>
+                  <option>Mãe</option>
+                  <option>Filho</option>
+                  <option>Filha</option>
+                </select>
+              </div>
+            )}
+
             {error && <p className="text-red-500 text-sm">{error}</p>}
+            {success && <p className="text-green-600 text-sm">{success}</p>}
 
             <button
               type="submit"
               disabled={submitting}
               className="w-full bg-indigo-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
-              {submitting ? 'Entrando...' : 'Entrar'}
+              {submitting ? (mode === 'login' ? 'Entrando...' : 'Registrando...') : mode === 'login' ? 'Entrar' : 'Registrar'}
             </button>
+
+            <div className="text-center text-sm text-gray-500">
+              {mode === 'login' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('register')
+                    setError('')
+                    setSuccess('')
+                  }}
+                  className="text-indigo-600 hover:text-indigo-800"
+                >
+                  Ainda não tenho conta
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login')
+                    setError('')
+                    setSuccess('')
+                  }}
+                  className="text-indigo-600 hover:text-indigo-800"
+                >
+                  Já tenho conta
+                </button>
+              )}
+            </div>
           </form>
         )}
 

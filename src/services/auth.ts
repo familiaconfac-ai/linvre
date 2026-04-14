@@ -25,6 +25,31 @@ export async function registerUser(
 }
 
 /**
+ * Registers a user account WITHOUT disrupting the current auth session.
+ * Uses a secondary Firebase app instance so the primary auth session is untouched.
+ */
+export async function registerUserWithoutSession(
+  email: string,
+  password: string,
+  profile: Omit<AppUser, 'id'>,
+): Promise<string> {
+  if (!isFirebaseConfigured()) {
+    throw new Error('Firebase não configurado para cadastro real.')
+  }
+  const secondaryApp = initializeApp(firebaseConfig, `register_user_${Date.now()}`)
+  const secondaryAuth = getAuth(secondaryApp)
+  try {
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password)
+    const userId = cred.user.uid
+    await createUserProfile({ ...profile, id: userId })
+    return userId
+  } finally {
+    await firebaseSignOut(secondaryAuth)
+    await deleteApp(secondaryApp)
+  }
+}
+
+/**
  * Registers a child account WITHOUT disrupting the currently logged-in parent session.
  * Uses a secondary Firebase app instance so the primary auth session is untouched.
  * No parent password needed.
