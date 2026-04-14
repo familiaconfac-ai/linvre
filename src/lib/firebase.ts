@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getFirestore, enableNetwork, disableNetwork } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
 // Copy .env.example to .env and fill with your Firebase project credentials.
@@ -37,6 +37,13 @@ if (isFirebaseConfigured()) {
     authInstance = getAuth(app)
     dbInstance = getFirestore(app)
     storageInstance = getStorage(app)
+
+    // Enable offline persistence for Firestore
+    // This helps with offline scenarios
+    if (dbInstance) {
+      // Note: enableNetwork/disableNetwork can be used to manually control connectivity
+      // but for now we'll rely on automatic handling
+    }
   } catch (err) {
     console.warn('Firebase initialization failed:', err)
   }

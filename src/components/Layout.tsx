@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function Layout({ children, title }: Props) {
-  const { appUser, logout, localMode, demoUsers, signInDemo, resetDemo } = useAuth()
+  const { appUser, logout, localMode, demoUsers, signInDemo, resetDemo, profileLoadError } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = async () => {
@@ -78,6 +78,23 @@ export default function Layout({ children, title }: Props) {
           </div>
         </div>
       </header>
+
+      {profileLoadError && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-4xl mx-auto px-4 py-2">
+            <div className="flex items-center gap-2 text-sm text-amber-800">
+              <span className="text-amber-600">⚠️</span>
+              <span>{profileLoadError}</span>
+              <button
+                onClick={() => window.location.reload()}
+                className="ml-auto text-xs bg-amber-100 hover:bg-amber-200 px-2 py-1 rounded transition-colors"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-4xl mx-auto px-4 py-6">
         {title && <div className="text-xs text-gray-400 mb-4">{title}</div>}

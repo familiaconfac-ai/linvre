@@ -32,6 +32,7 @@ interface AuthContextValue {
   loading: boolean
   localMode: boolean
   demoUsers: AppUser[]
+  profileLoadError: string | null
   signIn: (email: string, password: string) => Promise<void>
   signInDemo: (userId: string) => Promise<void>
   logout: () => Promise<void>
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appUser, setAppUser] = useState<AppUser | null>(null)
   const [demoUsers, setDemoUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
   const configured = isFirebaseConfigured()
 
   useEffect(() => {
@@ -67,12 +69,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const profile = await getCurrentUserProfile(user.uid)
           setAppUser(profile)
+          setProfileLoadError(null) // Limpa erro anterior se conseguiu carregar
         } catch (err) {
-          console.warn('Failed to load user profile:', err)
-          setAppUser(null)
+          console.warn('Failed to load user profile from Firestore:', err)
+
+          // Trata diferentes tipos de erro
+          const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido'
+
+          if (errorMessage.includes('offline') || errorMessage.includes('network')) {
+            // Erro de conectividade - cria perfil fallback com dados do Firebase Auth
+            console.warn('Criando perfil fallback devido a erro de conectividade')
+            const fallbackProfile: AppUser = {
+              id: user.uid,
+              displayName: user.displayName || user.email?.split('@')[0] || 'Usuário',
+              email: user.email || '',
+              role: 'parent', // Assume parent por padrão, pode ser ajustado depois
+              roleLabel: 'Pai', // Assume Pai por padrão
+              familyId: '', // Família não configurada
+              points: 0,
+              accessStatus: 'released',
+              isActive: true,
+              createdAt: new Date(),
+            }
+            setAppUser(fallbackProfile)
+            setProfileLoadError('Perfil carregado em modo offline. Algumas funcionalidades podem estar limitadas.')
+          } else if (errorMessage.includes('permission-denied')) {
+            // Erro de permissão - cria perfil fallback mas marca como erro
+            console.error('Erro de permissão ao acessar perfil do usuário')
+            const fallbackProfile: AppUser = {
+              id: user.uid,
+              displayName: user.displayName || user.email?.split('@')[0] || 'Usuário',
+              email: user.email || '',
+              role: 'parent',
+              roleLabel: 'Pai',
+              familyId: '',
+              points: 0,
+              accessStatus: 'released',
+              isActive: true,
+              createdAt: new Date(),
+            }
+            setAppUser(fallbackProfile)
+            setProfileLoadError('Erro de permissão. Usando perfil limitado.')
+          } else {
+            // Outro erro - cria perfil fallback genérico
+            console.warn('Erro ao carregar perfil, usando fallback:', errorMessage)
+            const fallbackProfile: AppUser = {
+              id: user.uid,
+              displayName: user.displayName || user.email?.split('@')[0] || 'Usuário',
+              email: user.email || '',
+              role: 'parent',
+              roleLabel: 'Pai',
+              familyId: '',
+              points: 0,
+              accessStatus: 'released',
+              isActive: true,
+              createdAt: new Date(),
+            }
+            setAppUser(fallbackProfile)
+            setProfileLoadError('Perfil carregado com limitações. Tente sincronizar quando possível.')
+          }
         }
       } else {
         setAppUser(null)
+        setProfileLoadError(null)
       }
       setLoading(false)
     })
@@ -134,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         localMode: !configured,
         demoUsers,
+        profileLoadError,
         signIn,
         signInDemo,
         logout,
