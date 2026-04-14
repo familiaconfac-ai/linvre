@@ -38,14 +38,33 @@ export async function registerUserWithoutSession(
   }
   const secondaryApp = initializeApp(firebaseConfig, `register_user_${Date.now()}`)
   const secondaryAuth = getAuth(secondaryApp)
+  let userCredential: any = null
   try {
-    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password)
-    const userId = cred.user.uid
+    userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password)
+    const userId = userCredential.user.uid
     await createUserProfile({ ...profile, id: userId })
     return userId
+  } catch (error) {
+    // Se falhou após criar o usuário no Auth, tenta limpar
+    if (userCredential?.user) {
+      try {
+        await userCredential.user.delete()
+      } catch (cleanupError) {
+        console.warn('Falha ao limpar usuário criado no Auth:', cleanupError)
+      }
+    }
+    throw error
   } finally {
-    await firebaseSignOut(secondaryAuth)
-    await deleteApp(secondaryApp)
+    try {
+      await firebaseSignOut(secondaryAuth)
+    } catch (signOutError) {
+      console.warn('Erro no signOut do app secundário:', signOutError)
+    }
+    try {
+      await deleteApp(secondaryApp)
+    } catch (deleteError) {
+      console.warn('Erro ao deletar app secundário:', deleteError)
+    }
   }
 }
 

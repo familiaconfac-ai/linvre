@@ -21,7 +21,10 @@ export function isFirebaseConfigured(): boolean {
     firebaseConfig.authDomain
   )
 }
-
+console.log('apiKey exists?', !!firebaseConfig.apiKey)
+console.log('apiKey prefix:', firebaseConfig.apiKey?.slice(0, 8))
+console.log('authDomain:', firebaseConfig.authDomain)
+console.log('projectId:', firebaseConfig.projectId)
 let app: ReturnType<typeof initializeApp> | null = null
 let authInstance: ReturnType<typeof getAuth> | null = null
 let dbInstance: ReturnType<typeof getFirestore> | null = null
