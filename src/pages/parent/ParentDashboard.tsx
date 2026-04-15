@@ -14,7 +14,7 @@ import {
   providerGetTodayTaskInstancesByChild,
   providerGetWeekTaskInstancesByChild,
 } from '../../services/dataProvider'
-import type { AccessSummary, AppUser } from '../../types'
+import type { AccessSummary, AppUser, Task, TaskInstance } from '../../types'
 import { endOfWeekKey, startOfWeekKey } from '../../utils/dateUtils'
 import { calculateReward } from '../../utils/rewardCalculator'
 
@@ -28,9 +28,14 @@ interface ChildCard {
 
 export default function ParentDashboard() {
   const { appUser, localMode, loading: authLoading, firebaseUser, profileLoadError } = useAuth()
-  const [cards, setCards] = useState<ChildCard[]>([])
+  const [children, setChildren] = useState<AppUser[]>([])
+  const [tasksByChildId, setTasksByChildId] = useState<Record<string, Task[]>>({})
+  const [todayInstancesByChildId, setTodayInstancesByChildId] = useState<Record<string, TaskInstance[]>>({})
+  const [weekInstancesByChildId, setWeekInstancesByChildId] = useState<Record<string, TaskInstance[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [tasksLoadError, setTasksLoadError] = useState<string | null>(null)
+  const [instancesLoadError, setInstancesLoadError] = useState<string | null>(null)
 
   console.log('[PARENT_DASHBOARD] render', {
     loading,
@@ -67,89 +72,220 @@ export default function ParentDashboard() {
 
     if (!appUser) {
       console.log('[PARENT_DASHBOARD] effect:no-app-user -> stop-local-loading')
-      setCards([])
+      setChildren([])
+      setTasksByChildId({})
+      setTodayInstancesByChildId({})
+      setWeekInstancesByChildId({})
+      setTasksLoadError(null)
+      setInstancesLoadError(null)
       setLoading(false)
       return
     }
 
     if (!appUser.familyId) {
       console.log('[PARENT_DASHBOARD] effect:fallback-without-family -> stop-local-loading')
-      setCards([])
+      setChildren([])
+      setTasksByChildId({})
+      setTodayInstancesByChildId({})
+      setWeekInstancesByChildId({})
+      setTasksLoadError(null)
+      setInstancesLoadError(null)
       setLoading(false)
       return
     }
 
     if (appUser.role !== 'parent') {
       console.log('[PARENT_DASHBOARD] effect:wrong-role -> stop-local-loading')
-      setCards([])
+      setChildren([])
+      setTasksByChildId({})
+      setTodayInstancesByChildId({})
+      setWeekInstancesByChildId({})
+      setTasksLoadError(null)
+      setInstancesLoadError(null)
       setLoading(false)
       return
     }
 
-    void loadChildren(appUser)
+    void loadDashboardData(appUser)
   }, [appUser, authLoading, profileLoadError])
 
-  async function loadChildren(currentUser: AppUser) {
-    console.log('[PARENT_DASHBOARD] loadChildren:start', {
-      familyId: currentUser.familyId,
-      role: currentUser.role,
+  async function loadDashboardData(currentUser: AppUser) {
+    console.log('[CHILDREN] load:start', {
+      firebaseUserUid: firebaseUser?.uid ?? null,
+      appUserId: currentUser.id ?? null,
+      familyId: currentUser.familyId ?? null,
+      role: currentUser.role ?? null,
+    })
+    console.log('[CHILDREN] dependency-check', {
+      hasAppUser: Boolean(currentUser),
+      hasFamilyId: Boolean(currentUser.familyId),
+      appUser: currentUser,
       profileLoadError,
     })
+
+    if (!currentUser.familyId) {
+      console.log('[CHILDREN] load:aborted-no-familyId')
+      setChildren([])
+      setTasksByChildId({})
+      setTodayInstancesByChildId({})
+      setWeekInstancesByChildId({})
+      setTasksLoadError(null)
+      setInstancesLoadError(null)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError('')
+    setChildren([])
+    setTasksByChildId({})
+    setTodayInstancesByChildId({})
+    setWeekInstancesByChildId({})
+    setTasksLoadError(null)
+    setInstancesLoadError(null)
+
+    const weekStart = startOfWeekKey()
+    const weekEnd = endOfWeekKey()
+    let familyChildren: AppUser[] = []
+    let nextTasksByChildId: Record<string, Task[]> = {}
 
     try {
-      const weekStart = startOfWeekKey()
-      const weekEnd = endOfWeekKey()
-      const children = await providerGetFamilyChildren(currentUser.familyId)
-      const cardData = await Promise.all(
-        children.map(async (child) => {
+      familyChildren = await providerGetFamilyChildren(currentUser.familyId)
+
+      console.log('[CHILDREN] load:success', {
+        familyId: currentUser.familyId,
+        count: familyChildren.length,
+        children: familyChildren.map((child) => ({
+          id: child.id,
+          familyId: child.familyId,
+          role: child.role,
+          displayName: child.displayName,
+        })),
+      })
+      setChildren(familyChildren)
+      setLoading(false)
+    } catch (error) {
+      console.error('[CHILDREN] load:error', error)
+      setChildren([])
+      setTasksByChildId({})
+      setTodayInstancesByChildId({})
+      setWeekInstancesByChildId({})
+      setError('Erro ao carregar filhos.')
+      setLoading(false)
+      return
+    }
+
+    try {
+      console.log('[TASKS] load:start', {
+        familyId: currentUser.familyId,
+        childIds: familyChildren.map((child) => child.id),
+      })
+
+      const taskEntries = await Promise.all(
+        familyChildren.map(async (child) => {
           const tasks = await providerGetTasksByChild(child.id, currentUser.familyId)
-          await providerEnsureDailyInstances(child.id, currentUser.familyId, tasks)
-          const instances = await providerGetTodayTaskInstancesByChild(child.id, currentUser.familyId)
-          const weekInstances = await providerGetWeekTaskInstancesByChild(
-            child.id,
-            currentUser.familyId,
-            weekStart,
-            weekEnd,
-          )
-          const summary = computeAccessStatus(instances, tasks)
-
-          const totalRewardToday = instances.reduce((sum, inst) => {
-            const task = tasks.find((t) => t.id === inst.taskId)
-            if (!task || inst.status === 'pending') return sum
-            return sum + (inst.rewardEarned ?? calculateReward(task, inst).rewardEarned)
-          }, 0)
-
-          const totalRewardWeek = weekInstances.reduce((sum, inst) => {
-            const task = tasks.find((t) => t.id === inst.taskId)
-            if (!task || !inst.completedAt) return sum
-            return sum + calculateReward(task, inst).rewardEarned
-          }, 0)
-
-          const pendingApprovalCount = instances.filter((i) => i.status === 'waiting_approval').length
-
-          return {
-            user: child,
-            summary,
-            totalRewardToday,
-            totalRewardWeek,
-            pendingApprovalCount,
-          }
+          return [child.id, tasks] as const
         }),
       )
 
-      console.log('[PARENT_DASHBOARD] loadChildren:success', {
-        childCount: cardData.length,
-      })
-      setCards(cardData)
-    } catch (loadError) {
-      console.log('[PARENT_DASHBOARD] loadChildren:error', loadError)
-      setError('Erro ao carregar filhos.')
-    } finally {
-      console.log('[PARENT_DASHBOARD] loadChildren:end -> loading:false')
-      setLoading(false)
+      nextTasksByChildId = Object.fromEntries(taskEntries)
+
+      console.log('[TASKS] load:success', nextTasksByChildId)
+
+      setTasksByChildId(nextTasksByChildId)
+      setTasksLoadError(null)
+    } catch (error) {
+      console.error('[TASKS] load:error', error)
+      nextTasksByChildId = {}
+      setTasksByChildId({})
+      setTasksLoadError('Tarefas indisponiveis no momento.')
+      console.warn('[TASKS] fallback:empty')
     }
+
+    try {
+      console.log('[INSTANCES] load:start', {
+        familyId: currentUser.familyId,
+        childIds: familyChildren.map((child) => child.id),
+      })
+
+      const instanceEntries = await Promise.all(
+        familyChildren.map(async (child) => {
+          const tasks = nextTasksByChildId[child.id] ?? []
+
+          await providerEnsureDailyInstances(child.id, currentUser.familyId, tasks)
+
+          const [todayInstances, weekInstances] = await Promise.all([
+            providerGetTodayTaskInstancesByChild(child.id, currentUser.familyId),
+            providerGetWeekTaskInstancesByChild(child.id, currentUser.familyId, weekStart, weekEnd),
+          ])
+
+          return [child.id, { todayInstances, weekInstances }] as const
+        }),
+      )
+
+      const nextTodayInstancesByChildId = Object.fromEntries(
+        instanceEntries.map(([childId, instances]) => [childId, instances.todayInstances]),
+      )
+      const nextWeekInstancesByChildId = Object.fromEntries(
+        instanceEntries.map(([childId, instances]) => [childId, instances.weekInstances]),
+      )
+
+      console.log('[INSTANCES] load:success', {
+        today: nextTodayInstancesByChildId,
+        week: nextWeekInstancesByChildId,
+      })
+
+      setTodayInstancesByChildId(nextTodayInstancesByChildId)
+      setWeekInstancesByChildId(nextWeekInstancesByChildId)
+      setInstancesLoadError(null)
+    } catch (error) {
+      console.error('[INSTANCES] load:error', error)
+      setTodayInstancesByChildId({})
+      setWeekInstancesByChildId({})
+      setInstancesLoadError('Progresso indisponivel no momento.')
+      console.warn('[INSTANCES] fallback:empty')
+    }
+  }
+
+  const cards: ChildCard[] = children.map((child) => {
+    const tasks = tasksByChildId[child.id] ?? []
+    const instances = todayInstancesByChildId[child.id] ?? []
+    const weekInstances = weekInstancesByChildId[child.id] ?? []
+    const summary = computeAccessStatus(instances, tasks)
+
+    const totalRewardToday = instances.reduce((sum, inst) => {
+      const task = tasks.find((t) => t.id === inst.taskId)
+      if (!task || inst.status === 'pending') return sum
+      return sum + (inst.rewardEarned ?? calculateReward(task, inst).rewardEarned)
+    }, 0)
+
+    const totalRewardWeek = weekInstances.reduce((sum, inst) => {
+      const task = tasks.find((t) => t.id === inst.taskId)
+      if (!task || !inst.completedAt) return sum
+      return sum + calculateReward(task, inst).rewardEarned
+    }, 0)
+
+    const pendingApprovalCount = instances.filter((i) => i.status === 'waiting_approval').length
+
+    return {
+      user: child,
+      summary,
+      totalRewardToday,
+      totalRewardWeek,
+      pendingApprovalCount,
+    }
+  })
+
+  if (!loading && error) {
+    console.log('[CHILDREN] load:end', {
+      loading: false,
+      status: 'error',
+    })
+  } else if (!loading) {
+    console.log('[CHILDREN] load:end', {
+      loading: false,
+      status: 'ready',
+    })
   }
 
   const totalToday = cards.reduce((sum, card) => sum + card.totalRewardToday, 0)
@@ -203,6 +339,21 @@ export default function ParentDashboard() {
 
       {error && <InlineMessage variant="error" message={error} className="mb-4" />}
 
+      {!loading && !error && (tasksLoadError || instancesLoadError) && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {tasksLoadError && (
+            <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700">
+              Tarefas indisponiveis
+            </div>
+          )}
+          {instancesLoadError && (
+            <div className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs text-blue-700">
+              Progresso indisponivel
+            </div>
+          )}
+        </div>
+      )}
+
       {!loading && !error && cards.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 mb-6">
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
@@ -240,13 +391,17 @@ export default function ParentDashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         {cards.map(({ user: child, summary, totalRewardToday, totalRewardWeek, pendingApprovalCount }) => {
+          const childTasksUnavailable = Boolean(tasksLoadError)
+          const childProgressUnavailable = Boolean(instancesLoadError)
           const statusLabel =
-            pendingApprovalCount > 0
+            childProgressUnavailable
+              ? 'Progresso indisponivel'
+              : pendingApprovalCount > 0
               ? 'Aguardando aprovacao'
               : summary.accessStatus === 'released'
                 ? 'Em dia'
-                : summary.accessStatus === 'partial'
-                  ? 'Em andamento'
+                : summary.accessStatus === 'recovery_pending' || summary.accessStatus === 'partial'
+                  ? 'Recuperacao pendente'
                   : 'Com atraso'
 
           return (
@@ -265,11 +420,15 @@ export default function ParentDashboard() {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-100">
                   <p className="text-gray-500">Total hoje</p>
-                  <p className="text-indigo-600 font-semibold text-sm">{totalRewardToday} pts</p>
+                  <p className="text-indigo-600 font-semibold text-sm">
+                    {childProgressUnavailable ? '--' : `${totalRewardToday} pts`}
+                  </p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">
                   <p className="text-gray-500">Total semana</p>
-                  <p className="text-gray-800 font-semibold text-sm">{totalRewardWeek} pts</p>
+                  <p className="text-gray-800 font-semibold text-sm">
+                    {childProgressUnavailable ? '--' : `${totalRewardWeek} pts`}
+                  </p>
                 </div>
               </div>
 
@@ -278,26 +437,31 @@ export default function ParentDashboard() {
                   Status: <span className="font-medium text-gray-700">{statusLabel}</span>
                 </p>
                 <p>
-                  Progresso: {summary.completedMandatory}/{summary.totalMandatory}
+                  Progresso:{' '}
+                  {childProgressUnavailable ? 'indisponivel' : `${summary.completedMandatory}/${summary.totalMandatory}`}
                 </p>
-                {pendingApprovalCount > 0 && <p>Aguardando aprovacao: {pendingApprovalCount}</p>}
+                {!childProgressUnavailable && pendingApprovalCount > 0 && <p>Aguardando aprovacao: {pendingApprovalCount}</p>}
+                {childTasksUnavailable && <p className="text-amber-700">Tarefas indisponiveis no momento.</p>}
+                {childProgressUnavailable && <p className="text-blue-700">Progresso indisponivel no momento.</p>}
               </div>
 
               <div>
                 <div className="flex justify-between text-xs text-gray-400 mb-1">
                   <span>Progresso hoje</span>
-                  <span>{summary.progressPercent}%</span>
+                  <span>{childProgressUnavailable ? '--' : `${summary.progressPercent}%`}</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-2">
                   <div
                     className={`h-2 rounded-full transition-all ${
-                      summary.accessStatus === 'released'
+                      childProgressUnavailable
+                        ? 'bg-gray-300'
+                        : summary.accessStatus === 'released'
                         ? 'bg-green-500'
-                        : summary.accessStatus === 'partial'
-                          ? 'bg-yellow-500'
+                        : summary.accessStatus === 'recovery_pending' || summary.accessStatus === 'partial'
+                          ? 'bg-amber-500'
                           : 'bg-red-400'
                     }`}
-                    style={{ width: `${summary.progressPercent}%` }}
+                    style={{ width: childProgressUnavailable ? '100%' : `${summary.progressPercent}%` }}
                   />
                 </div>
               </div>

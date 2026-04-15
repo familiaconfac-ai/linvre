@@ -91,8 +91,8 @@ export default function ChildDetailPage() {
         `"${task?.title ?? 'Tarefa'}" aprovada! Acesso: ${
           newSummary.accessStatus === 'released'
             ? 'Liberado ✓'
-            : newSummary.accessStatus === 'partial'
-            ? 'Parcial'
+            : newSummary.accessStatus === 'recovery_pending' || newSummary.accessStatus === 'partial'
+            ? 'Recuperacao pendente'
             : 'Bloqueado'
         }`,
       )
@@ -217,8 +217,8 @@ export default function ChildDetailPage() {
                   className={`h-2.5 rounded-full transition-all ${
                     summary.accessStatus === 'released'
                       ? 'bg-green-500'
-                      : summary.accessStatus === 'partial'
-                      ? 'bg-yellow-500'
+                      : summary.accessStatus === 'recovery_pending' || summary.accessStatus === 'partial'
+                      ? 'bg-amber-500'
                       : 'bg-red-400'
                   }`}
                   style={{ width: `${summary.progressPercent}%` }}

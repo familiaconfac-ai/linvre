@@ -1,12 +1,11 @@
 import {
   addDoc,
   collection,
+  doc,
   getDocs,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
-  doc,
   where,
 } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../lib/firebase'
@@ -17,18 +16,18 @@ export async function getTasksByChild(
   familyId: string,
 ): Promise<Task[]> {
   if (!db || !isFirebaseConfigured()) {
-    throw new Error('Firebase não configurado.')
+    throw new Error('Firebase nao configurado.')
   }
-  // Requires composite index: childId ASC, familyId ASC, active ASC, sortOrder ASC
-  const q = query(
-    collection(db, 'tasks'),
-    where('childId', '==', childId),
-    where('familyId', '==', familyId),
-    where('active', '==', true),
-    orderBy('sortOrder'),
-  )
+
+  // Avoid composite-index dependency on first dashboard load by querying only by familyId
+  // and applying the child/active filters plus sort locally.
+  const q = query(collection(db, 'tasks'), where('familyId', '==', familyId))
   const snap = await getDocs(q)
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Task)
+
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Task)
+    .filter((task) => task.childId === childId && task.active)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
 }
 
 /**
@@ -40,23 +39,21 @@ export async function getAllTasksByChild(
   familyId: string,
 ): Promise<Task[]> {
   if (!db || !isFirebaseConfigured()) {
-    throw new Error('Firebase não configurado.')
+    throw new Error('Firebase nao configurado.')
   }
-  const q = query(
-    collection(db, 'tasks'),
-    where('childId', '==', childId),
-    where('familyId', '==', familyId),
-  )
+
+  const q = query(collection(db, 'tasks'), where('familyId', '==', familyId))
   const snap = await getDocs(q)
+
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }) as Task)
-    .filter((t) => t.familyId === familyId)
+    .filter((task) => task.familyId === familyId && task.childId === childId)
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
 }
 
 export async function createTask(task: Omit<Task, 'id'>): Promise<string> {
   if (!db || !isFirebaseConfigured()) {
-    throw new Error('Firebase não configurado.')
+    throw new Error('Firebase nao configurado.')
   }
   const ref = await addDoc(collection(db, 'tasks'), {
     ...task,
@@ -67,7 +64,7 @@ export async function createTask(task: Omit<Task, 'id'>): Promise<string> {
 
 export async function updateTask(taskId: string, updates: Partial<Task>): Promise<void> {
   if (!db || !isFirebaseConfigured()) {
-    throw new Error('Firebase não configurado.')
+    throw new Error('Firebase nao configurado.')
   }
   await updateDoc(doc(db, 'tasks', taskId), updates as Record<string, unknown>)
 }

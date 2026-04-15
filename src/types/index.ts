@@ -10,6 +10,9 @@ export interface Family {
   createdAt?: Date;
 }
 
+export type ResolvedAccessStatus = 'blocked' | 'released' | 'recovery_pending';
+export type AccessStatus = ResolvedAccessStatus | 'partial';
+
 export interface AppUser {
   id: string;
   displayName: string;
@@ -20,7 +23,7 @@ export interface AppUser {
   notes?: string;
   familyId: string;
   points: number;
-  accessStatus: 'blocked' | 'partial' | 'released';
+  accessStatus: AccessStatus;
   isActive: boolean;
   createdAt?: Date;
 }
@@ -39,11 +42,14 @@ export interface Task {
   rewardType?: 'money' | 'points';
   rewardValue?: number;
   dueTime?: string;
+  weeklyDays?: number[]; // 0-6 (Sunday-Saturday)
+  monthlyDays?: number[]; // 1-31
+  oneTimeDate?: string; // YYYY-MM-DD
   halfRewardUntilMinutes?: number;
   zeroRewardAfterMinutes?: number;
   category: 'mandatory' | 'bonus';
   type: 'checkbox' | 'photo' | 'timer';
-  frequency: 'daily' | 'weekly';
+  frequency: 'daily' | 'weekly' | 'monthly' | 'one_time';
   requiresApproval: boolean;
   active: boolean;
   sortOrder: number;
@@ -57,6 +63,8 @@ export interface TaskInstance {
   childId: string;
   taskId: string;
   dateKey: string; // YYYY-MM-DD
+  scheduledFor?: Date;
+  dueAt?: Date;
   status: 'pending' | 'issue_reported' | 'waiting_approval' | 'completed' | 'skipped';
   proofUrl?: string;
   issuePhotoUrl?: string;

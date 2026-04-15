@@ -226,12 +226,14 @@ export default function ChildDashboard() {
   const statusBgClass = {
     released: 'bg-green-50 border-green-200',
     partial: 'bg-yellow-50 border-yellow-200',
+    recovery_pending: 'bg-amber-50 border-amber-200',
     blocked: 'bg-red-50 border-red-200',
   }
 
   const progressBarClass = {
     released: 'bg-green-500',
     partial: 'bg-yellow-500',
+    recovery_pending: 'bg-amber-500',
     blocked: 'bg-red-400',
   }
 
