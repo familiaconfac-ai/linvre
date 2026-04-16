@@ -106,5 +106,24 @@ export default function ProtectedRoute({ allowedRole }: Props) {
     return <Navigate to={appUser.role === 'parent' ? '/parent' : '/child'} replace />
   }
 
+  if (allowedRole === 'child' && appUser.role === 'child') {
+    console.log('[ACCESS] child-login:status', {
+      childId: appUser.id,
+      pathname: location.pathname,
+      accessStatus: appUser.accessStatus,
+      accessMode: appUser.accessMode ?? null,
+      blockedReason: appUser.blockedReason ?? null,
+      releaseReason: appUser.releaseReason ?? null,
+    })
+
+    if (appUser.accessStatus === 'blocked' && location.pathname !== '/child-blocked') {
+      return <Navigate to="/child-blocked" replace />
+    }
+
+    if (appUser.accessStatus === 'released' && location.pathname === '/child-blocked') {
+      return <Navigate to="/child" replace />
+    }
+  }
+
   return <Outlet />
 }

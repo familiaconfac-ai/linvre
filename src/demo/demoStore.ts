@@ -1,6 +1,7 @@
 import type { AppUser, Task, TaskInstance } from '../types'
 import { todayKey } from '../utils/dateUtils'
 import { computeAccessStatus } from '../services/accessEngine'
+import { evaluateChildAccess } from '../services/evaluateChildAccess'
 import { createInitialDemoStore, type DemoStoreData } from './demoData'
 
 const STORE_KEY = 'link-livre-demo-store-v1'
@@ -354,14 +355,32 @@ export function approveTaskInstanceDemo(
 
 export function recalculateChildAccessStatusDemo(childId: string, familyId: string) {
   const store = getDemoStore()
+  const child = store.users.find((user) => user.id === childId && user.role === 'child')
+  if (!child) {
+    throw new Error(`Child profile not found for "${childId}"`)
+  }
   const tasks = getTasksByChildDemo(childId, familyId)
   const instances = getTodayTaskInstancesByChildDemo(childId, familyId)
   const summary = computeAccessStatus(instances, tasks)
+  const evaluation = evaluateChildAccess({
+    child,
+    pendingMandatory: summary.pendingMandatory,
+  })
+
+  summary.accessStatus = evaluation.accessStatus
 
   updateStore((current) => ({
     ...current,
     users: current.users.map((u) =>
-      u.id === childId ? { ...u, accessStatus: summary.accessStatus } : u,
+      u.id === childId
+        ? {
+            ...u,
+            accessStatus: evaluation.accessStatus,
+            accessMode: evaluation.accessMode,
+            blockedReason: evaluation.blockedReason,
+            releaseReason: evaluation.releaseReason,
+          }
+        : u,
     ),
   }))
 

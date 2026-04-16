@@ -93,6 +93,15 @@ const unsubscribe = onAuthStateChanged(auth, async (user) => {
       console.log('[AUTH] profile:after-fetch', profile)
 
       if (profile) {
+        if (profile.role === 'child') {
+          console.log('[ACCESS] child-login:status', {
+            childId: profile.id,
+            accessStatus: profile.accessStatus,
+            accessMode: profile.accessMode ?? null,
+            blockedReason: profile.blockedReason ?? null,
+            releaseReason: profile.releaseReason ?? null,
+          })
+        }
         console.log('[AUTH] profile:using-firestore-profile')
         setAppUser(profile)
         setProfileLoadError(null)
@@ -203,7 +212,17 @@ throw new Error('Demo login only in local mode')
 }
 
 providerSetCurrentDemoUser(userId)
-setAppUser(providerGetCurrentDemoUser())
+const nextDemoUser = providerGetCurrentDemoUser()
+if (nextDemoUser?.role === 'child') {
+  console.log('[ACCESS] child-login:status', {
+    childId: nextDemoUser.id,
+    accessStatus: nextDemoUser.accessStatus,
+    accessMode: nextDemoUser.accessMode ?? null,
+    blockedReason: nextDemoUser.blockedReason ?? null,
+    releaseReason: nextDemoUser.releaseReason ?? null,
+  })
+}
+setAppUser(nextDemoUser)
 setDemoUsers(providerGetDemoUsers())
 
 }

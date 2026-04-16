@@ -1,5 +1,7 @@
 import type { Task, TaskInstance, AppUser, AccessSummary, ResolvedAccessStatus } from '../types'
 import { endOfMonthKey, fromDateKey, startOfMonthKey, todayKey } from '../utils/dateUtils'
+import { getFamily } from './families'
+import { evaluateChildAccess } from './evaluateChildAccess'
 import {
   ensureTaskInstancesForChildPeriod,
   getTaskInstancesByChildPeriod,
@@ -84,33 +86,6 @@ function summarizeAccess(tasks: Task[], instances: TaskInstance[]): AccessSummar
     (task) => latestInstancesByTask.get(task.id)?.status === 'completed',
   ).length
 
-  const openRecovery = mandatoryTasks.some((task) => {
-    const instance = latestInstancesByTask.get(task.id)
-    if (!instance) return false
-
-    const isRecoveryTask = Boolean(task.isManualIssue || instance.isManualIssue || instance.status === 'issue_reported')
-    const isOpen = instance.status !== 'completed' && instance.status !== 'skipped'
-
-    return isRecoveryTask && isOpen
-  })
-
-  const hasOverdueMandatory = mandatoryTasks.some((task) => {
-    const instance = latestInstancesByTask.get(task.id)
-    if (instance?.status === 'completed') return false
-    return getTaskDueDate(task, instance).getTime() <= Date.now()
-  })
-
-  let accessStatus: AppUser['accessStatus']
-  if (openRecovery) {
-    accessStatus = 'recovery_pending'
-  } else if (mandatoryTasks.length === 0 || completedMandatory === mandatoryTasks.length) {
-    accessStatus = 'released'
-  } else if (hasOverdueMandatory) {
-    accessStatus = 'blocked'
-  } else {
-    accessStatus = 'released'
-  }
-
   const pendingMandatory = Math.max(mandatoryTasks.length - completedMandatory, 0)
   const progressPercent =
     mandatoryTasks.length > 0 ? Math.round((completedMandatory / mandatoryTasks.length) * 100) : 100
@@ -120,7 +95,7 @@ function summarizeAccess(tasks: Task[], instances: TaskInstance[]): AccessSummar
     completedMandatory,
     pendingMandatory,
     progressPercent,
-    accessStatus,
+    accessStatus: pendingMandatory > 0 ? 'blocked' : 'released',
   }
 }
 
@@ -140,7 +115,8 @@ async function loadAccessInputs(childId: string) {
 
   await ensureTaskInstancesForChildPeriod(child.id, fromDateKey(monthStart), fromDateKey(monthEnd))
 
-  const [tasks, todayInstances, periodInstances] = await Promise.all([
+  const [family, tasks, todayInstances, periodInstances] = await Promise.all([
+    getFamily(child.familyId),
     getTasksByChild(child.id, child.familyId),
     getTodayTaskInstancesByChild(child.id, child.familyId),
     getTaskInstancesByChildPeriod(child.id, child.familyId, monthStart, monthEnd),
@@ -148,12 +124,21 @@ async function loadAccessInputs(childId: string) {
 
   const relevantInstances = dedupeInstances([...periodInstances, ...todayInstances])
   const summary = summarizeAccess(tasks, relevantInstances)
+  const evaluation = evaluateChildAccess({
+    child,
+    family,
+    pendingMandatory: summary.pendingMandatory,
+  })
+
+  summary.accessStatus = evaluation.accessStatus
 
   return {
     child,
+    family,
     tasks,
     relevantInstances,
     summary,
+    evaluation,
   }
 }
 
@@ -171,7 +156,7 @@ export async function recalculateChildAccess(
   console.log('[ACCESS] recalculate:start', { childId })
 
   try {
-    const { child, tasks, relevantInstances, summary } = await loadAccessInputs(childId)
+    const { child, family, tasks, relevantInstances, summary, evaluation } = await loadAccessInputs(childId)
 
     console.log('[ACCESS] recalculate:instances', {
       childId,
@@ -195,7 +180,11 @@ export async function recalculateChildAccess(
     console.log('[ACCESS] recalculate:result', {
       childId,
       familyId: child.familyId,
+      familyTimezone: family?.timezone ?? null,
       status: summary.accessStatus,
+      accessMode: evaluation.accessMode,
+      blockedReason: evaluation.blockedReason,
+      releaseReason: evaluation.releaseReason,
       totalMandatory: summary.totalMandatory,
       completedMandatory: summary.completedMandatory,
       pendingMandatory: summary.pendingMandatory,
@@ -204,11 +193,12 @@ export async function recalculateChildAccess(
 
     console.log('[ACCESS] recalculate:update-user', {
       childId,
-      accessStatus: summary.accessStatus,
+      accessStatus: evaluation.accessStatus,
+      accessMode: evaluation.accessMode,
     })
-    await updateUserAccessStatus(childId, summary.accessStatus)
+    await updateUserAccessStatus(childId, evaluation)
 
-    return summary.accessStatus as ResolvedAccessStatus
+    return evaluation.accessStatus
   } catch (error) {
     console.error('[ACCESS] recalculate:error', error)
     throw error
@@ -223,7 +213,7 @@ export async function recalculateChildAccessStatus(
   childId: string,
   _familyId: string,
 ): Promise<AccessSummary> {
-  const { summary } = await loadAccessInputs(childId)
-  await updateUserAccessStatus(childId, summary.accessStatus)
+  const { summary, evaluation } = await loadAccessInputs(childId)
+  await updateUserAccessStatus(childId, evaluation)
   return summary
 }

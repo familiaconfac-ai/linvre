@@ -8,6 +8,7 @@ import ParentDashboard from './pages/parent/ParentDashboard'
 import ChildDetailPage from './pages/parent/ChildDetailPage'
 import TasksPage from './pages/parent/TasksPage'
 import AddChildPage from './pages/parent/AddChildPage'
+import ChildBlockedPage from './pages/child/ChildBlockedPage'
 import ChildDashboard from './pages/child/ChildDashboard'
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
           {/* Child-only routes */}
           <Route element={<ProtectedRoute allowedRole="child" />}>
             <Route path="/child" element={<ChildDashboard />} />
+            <Route path="/child-blocked" element={<ChildBlockedPage />} />
           </Route>
 
           {/* Catch all → login */}

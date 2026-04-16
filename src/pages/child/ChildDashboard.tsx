@@ -15,12 +15,13 @@ import {
   providerRecalculateChildAccessStatus,
 } from '../../services/dataProvider'
 import { computeAccessStatus } from '../../services/accessEngine'
+import { getProgressBarClass, getProgressSummaryLabel } from '../../utils/accessStatusUi'
 import { calculateReward } from '../../utils/rewardCalculator'
 import type { AppUser, Task, TaskInstance, AccessSummary } from '../../types'
 import { uploadImage } from '../../utils/imageUpload'
 
 export default function ChildDashboard() {
-  const { appUser } = useAuth()
+  const { appUser, refreshAppUser } = useAuth()
   const [tasks, setTasks] = useState<Task[]>([])
   const [instances, setInstances] = useState<TaskInstance[]>([])
   const [summary, setSummary] = useState<AccessSummary | null>(null)
@@ -53,6 +54,7 @@ export default function ChildDashboard() {
     setLoading(true)
     setError('')
     try {
+      await refreshAppUser()
       const [taskList, familyChildren] = await Promise.all([
         providerGetTasksByChild(appUser.id, appUser.familyId),
         providerGetFamilyChildren(appUser.familyId),
@@ -230,13 +232,6 @@ export default function ChildDashboard() {
     blocked: 'bg-red-50 border-red-200',
   }
 
-  const progressBarClass = {
-    released: 'bg-green-500',
-    partial: 'bg-yellow-500',
-    recovery_pending: 'bg-amber-500',
-    blocked: 'bg-red-400',
-  }
-
   const selectedSiblingTaskMap = new Map(selectedSiblingTasks.map((t) => [t.id, t]))
 
   return (
@@ -247,9 +242,15 @@ export default function ChildDashboard() {
 
       {!loading && !error && appUser && summary && (
         <>
+          {console.log('[STATUS] child-dashboard:child-status', {
+            childId: appUser.id,
+            accessStatus: appUser.accessStatus,
+            progressToday: summary.completedMandatory,
+            totalRequiredToday: summary.totalMandatory,
+          })}
           {/* ─── Child name + big status banner ─── */}
           <div
-            className={`rounded-xl p-5 mb-5 border ${statusBgClass[summary.accessStatus]}`}
+            className={`rounded-xl p-5 mb-5 border ${statusBgClass[appUser.accessStatus]}`}
           >
             <p className="text-sm text-gray-500 mb-1">Olá,</p>
             <h2 className="text-2xl font-bold text-gray-800 mb-3">{appUser.displayName}! 👋</h2>
@@ -260,11 +261,16 @@ export default function ChildDashboard() {
                   {summary.completedMandatory} de {summary.totalMandatory} tarefas obrigatórias aprovadas
                 </p>
               </div>
-              <StatusBadge status={summary.accessStatus} />
+              <StatusBadge status={appUser.accessStatus} />
             </div>
 
             {/* Access released banner */}
-            {summary.accessStatus === 'released' && summary.totalMandatory > 0 && (
+            {summary.totalMandatory === 0 && (
+              <p className="mt-3 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg px-3 py-1.5 inline-block">
+                Sem tarefas obrigatorias hoje.
+              </p>
+            )}
+            {appUser.accessStatus === 'released' && summary.totalMandatory > 0 && (
               <p className="mt-3 text-sm font-semibold text-green-700 bg-green-100 rounded-lg px-3 py-1.5 inline-block">
                 🎉 Acesso liberado! Parabéns!
               </p>
@@ -408,7 +414,7 @@ export default function ChildDashboard() {
             </div>
             <div className="w-full bg-gray-100 rounded-full h-3">
               <div
-                className={`h-3 rounded-full transition-all ${progressBarClass[summary.accessStatus]}`}
+                className={`h-3 rounded-full transition-all ${getProgressBarClass(appUser.accessStatus, summary)}`}
                 style={{ width: `${summary.progressPercent}%` }}
               />
             </div>

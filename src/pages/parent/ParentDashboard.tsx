@@ -15,6 +15,11 @@ import {
   providerGetWeekTaskInstancesByChild,
 } from '../../services/dataProvider'
 import type { AccessSummary, AppUser, Task, TaskInstance } from '../../types'
+import {
+  getAccessStatusLabel,
+  getProgressBarClass,
+  getProgressSummaryLabel,
+} from '../../utils/accessStatusUi'
 import { endOfWeekKey, startOfWeekKey } from '../../utils/dateUtils'
 import { calculateReward } from '../../utils/rewardCalculator'
 
@@ -253,6 +258,22 @@ export default function ParentDashboard() {
     const weekInstances = weekInstancesByChildId[child.id] ?? []
     const summary = computeAccessStatus(instances, tasks)
 
+    console.log('[STATUS] derived-status:before-fix', {
+      screen: 'dashboard',
+      childId: child.id,
+      derivedAccessStatus: summary.accessStatus,
+      accessStatus: child.accessStatus,
+      progressToday: summary.completedMandatory,
+      totalRequiredToday: summary.totalMandatory,
+    })
+
+    console.log('[STATUS] dashboard:child-status', {
+      childId: child.id,
+      accessStatus: child.accessStatus,
+      progressToday: summary.completedMandatory,
+      totalRequiredToday: summary.totalMandatory,
+    })
+
     const totalRewardToday = instances.reduce((sum, inst) => {
       const task = tasks.find((t) => t.id === inst.taskId)
       if (!task || inst.status === 'pending') return sum
@@ -393,16 +414,8 @@ export default function ParentDashboard() {
         {cards.map(({ user: child, summary, totalRewardToday, totalRewardWeek, pendingApprovalCount }) => {
           const childTasksUnavailable = Boolean(tasksLoadError)
           const childProgressUnavailable = Boolean(instancesLoadError)
-          const statusLabel =
-            childProgressUnavailable
-              ? 'Progresso indisponivel'
-              : pendingApprovalCount > 0
-              ? 'Aguardando aprovacao'
-              : summary.accessStatus === 'released'
-                ? 'Em dia'
-                : summary.accessStatus === 'recovery_pending' || summary.accessStatus === 'partial'
-                  ? 'Recuperacao pendente'
-                  : 'Com atraso'
+          const visualStatus = child.accessStatus
+          const progressLabel = getProgressSummaryLabel(summary)
 
           return (
             <div
@@ -434,13 +447,15 @@ export default function ParentDashboard() {
 
               <div className="text-xs text-gray-500">
                 <p>
-                  Status: <span className="font-medium text-gray-700">{statusLabel}</span>
+                  Status: <span className="font-medium text-gray-700">{getAccessStatusLabel(visualStatus)}</span>
                 </p>
                 <p>
-                  Progresso:{' '}
-                  {childProgressUnavailable ? 'indisponivel' : `${summary.completedMandatory}/${summary.totalMandatory}`}
+                  Progresso: {childProgressUnavailable ? 'indisponivel' : progressLabel}
                 </p>
                 {!childProgressUnavailable && pendingApprovalCount > 0 && <p>Aguardando aprovacao: {pendingApprovalCount}</p>}
+                {!childProgressUnavailable && summary.totalMandatory === 0 && (
+                  <p className="text-slate-600">Sem tarefas obrigatorias hoje.</p>
+                )}
                 {childTasksUnavailable && <p className="text-amber-700">Tarefas indisponiveis no momento.</p>}
                 {childProgressUnavailable && <p className="text-blue-700">Progresso indisponivel no momento.</p>}
               </div>
@@ -453,13 +468,7 @@ export default function ParentDashboard() {
                 <div className="w-full bg-gray-100 rounded-full h-2">
                   <div
                     className={`h-2 rounded-full transition-all ${
-                      childProgressUnavailable
-                        ? 'bg-gray-300'
-                        : summary.accessStatus === 'released'
-                        ? 'bg-green-500'
-                        : summary.accessStatus === 'recovery_pending' || summary.accessStatus === 'partial'
-                          ? 'bg-amber-500'
-                          : 'bg-red-400'
+                      childProgressUnavailable ? 'bg-gray-300' : getProgressBarClass(visualStatus, summary)
                     }`}
                     style={{ width: childProgressUnavailable ? '100%' : `${summary.progressPercent}%` }}
                   />

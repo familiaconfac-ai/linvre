@@ -1,6 +1,7 @@
 import type { AppUser, Family, Task, TaskInstance } from '../types'
 import { todayKey } from '../utils/dateUtils'
 import { computeAccessStatus } from '../services/accessEngine'
+import { evaluateChildAccess } from '../services/evaluateChildAccess'
 
 export interface DemoStoreData {
   family: Family
@@ -327,7 +328,18 @@ export function createInitialDemoStore(): DemoStoreData {
     const childTasks = tasks.filter((t) => t.childId === user.id && t.active)
     const childInstances = taskInstances.filter((i) => i.childId === user.id)
     const summary = computeAccessStatus(childInstances, childTasks)
-    return { ...user, accessStatus: summary.accessStatus }
+    const evaluation = evaluateChildAccess({
+      child: user,
+      family,
+      pendingMandatory: summary.pendingMandatory,
+    })
+    return {
+      ...user,
+      accessStatus: evaluation.accessStatus,
+      accessMode: evaluation.accessMode,
+      blockedReason: evaluation.blockedReason,
+      releaseReason: evaluation.releaseReason,
+    }
   })
 
   return {

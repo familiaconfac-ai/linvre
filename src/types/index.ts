@@ -7,11 +7,19 @@ export interface Family {
   childrenIds: string[];
   timezone?: string;
   dayResetHour?: number; // 0-23, hour to reset daily tasks (e.g. 4 = 4:00 AM)
+  allowedStartHour?: number;
+  allowedEndHour?: number;
   createdAt?: Date;
 }
 
 export type ResolvedAccessStatus = 'blocked' | 'released' | 'recovery_pending';
 export type AccessStatus = ResolvedAccessStatus | 'partial';
+export type AccessMode =
+  | 'manual_block'
+  | 'manual_release'
+  | 'outside_allowed_hours'
+  | 'pending_mandatory'
+  | 'released';
 
 export interface AppUser {
   id: string;
@@ -24,6 +32,13 @@ export interface AppUser {
   familyId: string;
   points: number;
   accessStatus: AccessStatus;
+  accessMode?: AccessMode;
+  blockedReason?: string | null;
+  releaseReason?: string | null;
+  manualBlock?: boolean;
+  manualRelease?: boolean;
+  allowedStartHour?: number;
+  allowedEndHour?: number;
   isActive: boolean;
   createdAt?: Date;
 }
@@ -93,4 +108,11 @@ export interface AccessSummary {
   pendingMandatory: number;
   progressPercent: number;
   accessStatus: AppUser['accessStatus'];
+}
+
+export interface ChildAccessEvaluation {
+  accessStatus: ResolvedAccessStatus;
+  accessMode: AccessMode;
+  blockedReason: string | null;
+  releaseReason: string | null;
 }

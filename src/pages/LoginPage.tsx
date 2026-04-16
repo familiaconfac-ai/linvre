@@ -27,7 +27,12 @@ export default function LoginPage() {
 
   // Redirect already-authenticated users
   if (appUser) {
-    return <Navigate to={appUser.role === 'parent' ? '/parent' : '/child'} replace />
+    return (
+      <Navigate
+        to={appUser.role === 'parent' ? '/parent' : appUser.accessStatus === 'blocked' ? '/child-blocked' : '/child'}
+        replace
+      />
+    )
   }
 
   const handleDemoLogin = async (userId: string) => {
@@ -35,7 +40,14 @@ export default function LoginPage() {
     try {
       const selectedUser = demoUsers.find((user) => user.id === userId)
       await signInDemo(userId)
-      navigate(selectedUser?.role === 'parent' ? '/parent' : '/child', { replace: true })
+      navigate(
+        selectedUser?.role === 'parent'
+          ? '/parent'
+          : selectedUser?.accessStatus === 'blocked'
+          ? '/child-blocked'
+          : '/child',
+        { replace: true },
+      )
     } catch {
       setError('Não foi possível iniciar sessão demo.')
     }

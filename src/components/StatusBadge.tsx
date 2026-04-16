@@ -1,15 +1,9 @@
 import type { AppUser } from '../types'
+import { getAccessStatusLabel } from '../utils/accessStatusUi'
 
 interface Props {
   status: AppUser['accessStatus']
   size?: 'sm' | 'md'
-}
-
-const labels: Record<AppUser['accessStatus'], string> = {
-  blocked: 'Bloqueado',
-  partial: 'Parcial',
-  recovery_pending: 'Recuperacao',
-  released: 'Liberado',
 }
 
 const colors: Record<AppUser['accessStatus'], string> = {
@@ -26,7 +20,7 @@ export default function StatusBadge({ status, size = 'md' }: Props) {
         size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-3 py-1 text-sm'
       }`}
     >
-      {labels[status]}
+      {getAccessStatusLabel(status)}
     </span>
   )
 }

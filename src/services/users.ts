@@ -9,7 +9,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../lib/firebase'
-import type { AppUser } from '../types'
+import type { AppUser, ChildAccessEvaluation } from '../types'
 
 function normalizeFirestoreError(err: unknown): Error {
   const code = typeof err === 'object' && err && 'code' in err ? String((err as { code?: unknown }).code) : ''
@@ -129,7 +129,7 @@ export async function getFamilyChildren(familyId: string): Promise<AppUser[]> {
 
 export async function updateUserAccessStatus(
   userId: string,
-  accessStatus: AppUser['accessStatus'],
+  access: AppUser['accessStatus'] | ChildAccessEvaluation,
   points?: number,
 ): Promise<void> {
   if (!db || !isFirebaseConfigured()) {
@@ -137,7 +137,15 @@ export async function updateUserAccessStatus(
   }
 
   try {
-    const updates: Record<string, unknown> = { accessStatus }
+    const updates: Record<string, unknown> =
+      typeof access === 'string'
+        ? { accessStatus: access }
+        : {
+            accessStatus: access.accessStatus,
+            accessMode: access.accessMode,
+            blockedReason: access.blockedReason,
+            releaseReason: access.releaseReason,
+          }
     if (points !== undefined) updates.points = points
     await updateDoc(doc(db, 'users', userId), updates)
   } catch (err) {
